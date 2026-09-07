@@ -764,7 +764,6 @@ function boot(){
       // data.json недоступен или сломан — работаем на встроенной копии, чтобы не оставить пустой экран
       try {
         start(JSON.parse(document.getElementById('seed').textContent));
-        document.getElementById('notice').classList.remove('hidden');
       } catch(e){
         document.getElementById('fallback').classList.remove('hidden');
       }
