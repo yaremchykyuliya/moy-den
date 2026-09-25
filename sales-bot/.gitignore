@@ -5,3 +5,4 @@ __pycache__/
 # Платные материалы: репозиторий публичный, их здесь быть не должно
 guides/paid/
 products/paid/
+backups/
