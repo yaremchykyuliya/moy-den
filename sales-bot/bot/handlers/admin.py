@@ -45,6 +45,12 @@ async def stats(message: Message, db: Database, store: ContentStore):
             title = html.escape(product.title) if product else row["product_id"]
             cur = CURRENCY_LABEL.get(row["currency"], row["currency"])
             lines.append(f"• {title}: {row['sales']} шт. — {row['revenue']} {cur}")
+    if s["claims"]:
+        lines.append("\n<b>Забрали бесплатно</b>")
+        for row in s["claims"]:
+            product = store.product(row["product_id"])
+            title = html.escape(product.title) if product else row["product_id"]
+            lines.append(f"• {title}: {row['people']} чел.")
     await message.answer("\n".join(lines))
 
 
@@ -55,7 +61,9 @@ async def reload(message: Message, store: ContentStore):
     except ContentError as e:
         await message.answer(f"❌ Контент не обновлён, бот работает на старой версии.\n\n{html.escape(str(e))}")
         return
-    await message.answer(f"✅ Контент обновлён. Товаров в каталоге: {len(content.products)}")
+    await message.answer(
+        f"✅ Контент обновлён. Экранов: {len(content.screens)}, продуктов: {len(content.products)}"
+    )
 
 
 @router.message(Command("refund"))

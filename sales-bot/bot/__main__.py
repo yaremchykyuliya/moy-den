@@ -15,10 +15,8 @@ from .sales import poll_yookassa
 from .yookassa import YooKassaClient
 
 COMMANDS = [
-    BotCommand(command="start", description="Главное меню"),
-    BotCommand(command="catalog", description="Каталог продуктов"),
+    BotCommand(command="menu", description="Главное меню"),
     BotCommand(command="my", description="Мои покупки"),
-    BotCommand(command="support", description="Поддержка"),
     BotCommand(command="paysupport", description="Вопросы по оплате"),
 ]
 
@@ -49,7 +47,10 @@ async def main() -> None:
     await bot.set_my_commands(COMMANDS)
 
     poller = asyncio.create_task(poll_yookassa(bot, db, store, config, yookassa)) if yookassa else None
-    logging.info("Бот запущен. Оплата: %s. Товаров: %d", config.payment_provider, len(store.current.products))
+    logging.info(
+        "Бот запущен. Оплата: %s. Экранов: %d, продуктов: %d", config.payment_provider,
+        len(store.current.screens), len(store.current.products),
+    )
     try:
         await dp.start_polling(bot)
     finally:

@@ -23,8 +23,8 @@ def _order_id(payload: str) -> int | None:
 async def buy(callback: CallbackQuery, callback_data: kb.BuyCb, bot: Bot, config: Config,
               store: ContentStore, db: Database, yookassa: YooKassaClient | None):
     product = store.product(callback_data.id)
-    if product is None:
-        await callback.answer("Этого продукта уже нет в каталоге", show_alert=True)
+    if product is None or product.free:
+        await callback.answer("Этого продукта уже нет в продаже", show_alert=True)
         return
 
     user_id = callback.from_user.id
@@ -80,12 +80,13 @@ async def pre_checkout(query: PreCheckoutQuery, store: ContentStore, db: Databas
         and order.user_id == query.from_user.id
         and order.amount == query.total_amount
         and order.currency == query.currency
-        and store.product(order.product_id) is not None
+        and (product := store.product(order.product_id)) is not None
+        and not product.free
     )
     if ok:
         await query.answer(ok=True)
     else:
-        await query.answer(ok=False, error_message="Этот счёт устарел. Открой продукт в каталоге заново.")
+        await query.answer(ok=False, error_message="Этот счёт устарел. Откройте продукт в меню заново.")
 
 
 @router.message(F.successful_payment)

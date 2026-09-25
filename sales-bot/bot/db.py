@@ -22,6 +22,12 @@ CREATE TABLE IF NOT EXISTS orders (
     created_at          TEXT NOT NULL DEFAULT (datetime('now')),
     paid_at             TEXT
 );
+CREATE TABLE IF NOT EXISTS claims (
+    user_id     INTEGER NOT NULL,
+    product_id  TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, product_id)
+);
 CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status, provider);
 """
@@ -127,6 +133,12 @@ class Database:
         ) as cur:
             return await cur.fetchone() is not None
 
+    async def record_claim(self, user_id: int, product_id: str) -> None:
+        await self.conn.execute(
+            "INSERT OR IGNORE INTO claims (user_id, product_id) VALUES (?, ?)", (user_id, product_id)
+        )
+        await self.conn.commit()
+
     async def stats(self) -> dict:
         async with self.conn.execute("SELECT COUNT(*) FROM users") as cur:
             users = (await cur.fetchone())[0]
@@ -140,7 +152,12 @@ class Database:
                ORDER BY revenue DESC"""
         ) as cur:
             by_product = [dict(r) for r in await cur.fetchall()]
-        return {"users": users, "buyers": buyers, "by_product": by_product}
+        async with self.conn.execute(
+            """SELECT product_id, COUNT(*) AS people FROM claims
+               GROUP BY product_id ORDER BY people DESC"""
+        ) as cur:
+            claims = [dict(r) for r in await cur.fetchall()]
+        return {"users": users, "buyers": buyers, "by_product": by_product, "claims": claims}
 
     @staticmethod
     def _order(row: aiosqlite.Row) -> Order:
