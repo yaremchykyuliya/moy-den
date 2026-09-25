@@ -34,6 +34,10 @@ CREATE TABLE IF NOT EXISTS nurture_sent (
     sent_at     TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (user_id, step_id)
 );
+CREATE TABLE IF NOT EXISTS meta (
+    key    TEXT PRIMARY KEY,
+    value  TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS admin_messages (
     chat_id     INTEGER NOT NULL,
     message_id  INTEGER NOT NULL,
@@ -195,6 +199,15 @@ class Database:
         await self.conn.execute(
             "INSERT OR IGNORE INTO claims (user_id, product_id) VALUES (?, ?)", (user_id, product_id)
         )
+        await self.conn.commit()
+
+    async def get_meta(self, key: str) -> str | None:
+        async with self.conn.execute("SELECT value FROM meta WHERE key = ?", (key,)) as cur:
+            row = await cur.fetchone()
+        return row["value"] if row else None
+
+    async def set_meta(self, key: str, value: str) -> None:
+        await self.conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", (key, value))
         await self.conn.commit()
 
     async def user_exists(self, user_id: int) -> bool:

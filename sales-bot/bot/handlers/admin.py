@@ -10,6 +10,7 @@ from aiogram.filters.callback_data import CallbackData
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from ..backup import send_backup
 from ..config import Config
 from ..content import ContentError, ContentStore
 from ..db import Database
@@ -53,7 +54,8 @@ async def help_(message: Message):
         "<b>Команды администратора</b>\n\n"
         "/stats — пользователи, покупатели, выручка\n"
         "/reload — перечитать content.yaml без перезапуска\n"
-        "/refund &lt;номер заказа&gt; — вернуть звёзды (только для Stars)\n\n"
+        "/refund &lt;номер заказа&gt; — вернуть звёзды (только для Stars)\n"
+        "/backup — прислать копию базы сейчас (сама приходит по понедельникам)\n\n"
         "<b>Рассылка</b>\n"
         "1. Напиши боту сообщение: текст, фото, видео — как обычно.\n"
         "2. Ответь на него командой /broadcast.\n"
@@ -93,6 +95,11 @@ async def stats(message: Message, db: Database, store: ContentStore):
         for row in s["nurture"]:
             lines.append(f"• {html.escape(row['step_id'])}: {row['people']} чел.")
     await message.answer("\n".join(lines))
+
+
+@router.message(Command("backup"))
+async def backup(message: Message, bot: Bot, db: Database, config: Config):
+    await send_backup(bot, db, config, admin_ids=[message.from_user.id])
 
 
 @router.message(Command("reload"))

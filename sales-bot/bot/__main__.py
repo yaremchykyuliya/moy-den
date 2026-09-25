@@ -8,6 +8,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.types import BotCommand
 
+from .backup import run_weekly as run_backups
 from .config import load_config
 from .content import ContentError, ContentStore
 from .db import Database
@@ -51,6 +52,8 @@ async def main() -> None:
     await bot.set_my_commands(COMMANDS)
 
     tasks = [asyncio.create_task(run_nurture(bot, db, store, config.timezone))]
+    if config.admin_ids:
+        tasks.append(asyncio.create_task(run_backups(bot, db, config)))
     if yookassa:
         tasks.append(asyncio.create_task(poll_yookassa(bot, db, store, config, yookassa)))
     tribute_runner = None
