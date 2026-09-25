@@ -90,8 +90,11 @@ def build_html(path: Path) -> tuple[str, dict]:
     _, front, body = raw.split("---", 2)
     meta = yaml.safe_load(front)
     template = (HERE / "template.html").read_text(encoding="utf-8")
+    number = f"{int(meta['number']):02d}" if meta.get("number") else ""
     values = {
-        "number": f"{int(meta['number']):02d}",
+        "kicker": html.escape(meta.get("kicker", "Бесплатный гайд")),
+        "badge": html.escape(str(meta.get("badge", number))),
+        "footer": html.escape(meta.get("footer", f"Гайд {number} · {meta['title']}")).replace('"', "'"),
         "title": nbsp(html.escape(meta["title"])),
         "promise": nbsp(html.escape(meta["promise"])),
         "time": html.escape(meta["time"]),
@@ -127,7 +130,7 @@ def to_pdf(chrome: str, html_text: str, out: Path) -> None:
 
 
 def main() -> None:
-    patterns = sys.argv[1:] or ["[0-9]*.md"]
+    patterns = sys.argv[1:] or ["[0-9]*.md", "paid/*.md"]
     files = sorted({p for pattern in patterns for p in HERE.glob(pattern)})
     if not files:
         raise SystemExit("Не нашёл гайдов для сборки")
@@ -136,8 +139,9 @@ def main() -> None:
     for path in files:
         html_text, meta = build_html(path)
         out = OUT / meta["file"]
+        out.parent.mkdir(parents=True, exist_ok=True)
         to_pdf(chrome, html_text, out)
-        print(f"✓ {path.name} → products/{out.name}")
+        print(f"✓ {path.relative_to(HERE)} → {out.relative_to(OUT.parent)}")
 
 
 if __name__ == "__main__":

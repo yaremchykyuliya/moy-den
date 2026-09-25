@@ -12,7 +12,7 @@
 }
 @page{
   size:148mm 210mm; margin:15mm 13mm 17mm; background:var(--paper);
-  @bottom-left{content:"Гайд {{number}} · {{title}}"; font:500 6.8pt var(--sans); color:#A79F90; letter-spacing:.02em}
+  @bottom-left{content:"{{footer}}"; font:500 6.8pt var(--sans); color:#A79F90; letter-spacing:.02em}
   @bottom-right{content:counter(page); font:500 7.5pt var(--sans); color:#A79F90}
 }
 @page cover{
@@ -99,8 +99,8 @@ td:first-child{font-weight:700;width:34%}
 </head>
 <body>
 <section class="cover">
-  <div class="kicker">Бесплатный гайд</div>
-  <div class="num">{{number}}</div>
+  <div class="kicker">{{kicker}}</div>
+  <div class="num">{{badge}}</div>
   <h1>{{title}}</h1>
   <p class="promise">{{promise}}</p>
   <div class="chips">
