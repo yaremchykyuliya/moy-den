@@ -296,6 +296,8 @@ curl -fsSL https://raw.githubusercontent.com/yaremchykyuliya/moy-den/main/sales-
    ```
 3. Запустить: `sudo systemctl start sales-bot`
 
+> **`sudo: command not found`?** Значит, ты и так вошла как `root`, а `sudo` на сервере не установлен. Пиши те же команды без `sudo` — например, `bash /opt/moy-den/sales-bot/deploy/update.sh`.
+
 **Полезные команды**
 
 | Что | Команда |
