@@ -158,7 +158,6 @@ def build_html(path: Path) -> tuple[str, dict]:
         "promise": nbsp(html.escape(meta["promise"])),
         "time": html.escape(meta["time"]),
         "for": html.escape(meta["for"]),
-        "date": html.escape(str(meta["date"])),
         "fonts": (HERE / "fonts" / "fonts.css").read_text(encoding="utf-8"),
         "body": body_html,
     }
