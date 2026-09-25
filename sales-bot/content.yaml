@@ -205,7 +205,8 @@ screens:
       Да. Нажимаешь кнопку — PDF приходит в чат.
 
       <b>Когда придёт покупка?</b>
-      Сразу после оплаты, в этот чат.
+      Картой через Tribute — сразу после оплаты.
+      Переводом на карту — после проверки чека, обычно в течение нескольких часов.
 
       <b>Потерялся файл?</b>
       Он всегда лежит в «Моих покупках».
@@ -339,6 +340,11 @@ products:
   # Репозиторий публичный, поэтому PDF платных продуктов в git НЕ хранятся.
   # Положи файлы в папку products/paid/ на сервере, где работает бот.
   # Исходники — в guides/paid/, сборка: python guides/build.py
+  #
+  # Tribute:
+  #   tribute_url         — ссылка на продукт в Tribute (⚠️ сейчас ЗАГЛУШКА)
+  #   tribute_product_id  — номер продукта в Tribute, чтобы бот узнавал о покупках
+  #   Цена в Tribute должна совпадать с price_rub.
   - id: guide
     title: Нейросети с нуля
     description: |
@@ -355,6 +361,8 @@ products:
       PDF, 18 страниц. Придёт в этот чат сразу после оплаты.
     price_rub: 990
     price_stars: 500
+    tribute_url: https://web.tribute.tg/p/ZAMENI
+    # tribute_product_id: 123456
     delivery:
       type: file
       value: products/paid/neyroseti-s-nulya.pdf
@@ -373,6 +381,8 @@ products:
       PDF, 15 страниц. Придёт в этот чат сразу после оплаты.
     price_rub: 490
     price_stars: 250
+    tribute_url: https://web.tribute.tg/p/ZAMENI
+    # tribute_product_id: 123457
     delivery:
       type: file
       value: products/paid/biblioteka-zaprosov.pdf
@@ -449,6 +459,39 @@ texts:
     Держи <b>{product}</b>
 
   pay_prompt: Нажми «Оплатить». Продукт придёт в этот чат сразу после оплаты.
+
+  # ── Выбор способа оплаты ── {product} — название
+  pay_choose: Как удобнее оплатить <b>{product}</b>?
+
+  # ── Tribute ── {product}, {amount}
+  tribute_prompt: |
+    <b>{product}</b> — {amount} ₽
+
+    Оплата картой через Tribute.
+    Сразу после оплаты Tribute пришлёт продукт в Telegram.
+
+  # ── Перевод на карту ── {product}, {amount}, {order}, {details} (реквизиты из .env)
+  transfer_prompt: |
+    <b>{product}</b> — {amount} ₽
+
+    Переведи <b>{amount} ₽</b> по реквизитам:
+    {details}
+
+    После перевода пришли сюда скриншот или файл чека — проверю поступление и пришлю продукт.
+    Номер заказа: {order}
+
+  transfer_received: |
+    Чек по заказу №{order} у меня 🤍
+    Проверю поступление и пришлю продукт сюда. Обычно это занимает несколько часов.
+
+  transfer_rejected: |
+    Перевод по заказу №{order} не нашёлся.
+    Если деньги списались — напиши мне и приложи чек из банка, разберёмся.
+
+  transfer_no_order: Если это чек об оплате — сначала выбери продукт и способ «Переводом на карту», потом пришли чек.
+
+  # Перед чеком, который ты отправляешь покупателю ответом на заявку. {order}
+  seller_receipt: "🧾 Чек об оплате заказа №{order}:"
 
   # Два текста ниже показываются во всплывающем окне — не длиннее 200 символов
   pay_waiting: Пока не вижу оплату. Если она уже прошла — подожди минуту и нажми ещё раз.

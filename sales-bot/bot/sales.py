@@ -48,7 +48,7 @@ async def notify_admins(bot: Bot, config: Config, text: str) -> None:
             log.warning("Не удалось написать админу %s — он запускал бота?", admin_id)
 
 
-async def _buyer_name(bot: Bot, user_id: int) -> str:
+async def buyer_name(bot: Bot, user_id: int) -> str:
     try:
         chat = await bot.get_chat(user_id)
     except Exception:
@@ -64,7 +64,7 @@ async def complete_order(bot: Bot, db: Database, store: ContentStore, config: Co
 
     product = store.product(order.product_id)
     title = html.escape(product.title) if product else order.product_id
-    buyer = await _buyer_name(bot, order.user_id)
+    buyer = await buyer_name(bot, order.user_id)
     price = f"{order.amount} {CURRENCY_LABEL.get(order.currency, order.currency)}"
 
     try:
@@ -74,7 +74,10 @@ async def complete_order(bot: Bot, db: Database, store: ContentStore, config: Co
         await deliver(bot, order.user_id, product)
     except Exception as e:
         log.exception("Не удалось выдать заказ %s", order.id)
-        await bot.send_message(order.user_id, store.text("delivery_error"))
+        try:
+            await bot.send_message(order.user_id, store.text("delivery_error"))
+        except Exception:
+            log.warning("Не удалось сообщить покупателю %s об ошибке выдачи", order.user_id)
         await notify_admins(
             bot, config,
             f"⚠️ Заказ №{order.id} ОПЛАЧЕН, но продукт не выдан.\n"

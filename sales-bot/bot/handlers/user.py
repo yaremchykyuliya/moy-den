@@ -60,9 +60,9 @@ async def _open_product(target, product: Product, back_to: str, bot: Bot,
     owned = await db.has_paid(user_id, product.id)
     text = (
         f"<b>{html.escape(product.title)}</b>\n\n{product.description}\n\n"
-        f"Стоимость: <b>{product.price_label(store.provider)}</b>"
+        f"Стоимость: <b>{product.price_label(store.methods)}</b>"
     )
-    await _show(target, text, kb.product_card(product, store.provider, owned, back_to), photo=product.photo)
+    await _show(target, text, kb.product_card(product, store.methods, owned, back_to), photo=product.photo)
 
 
 @router.message(CommandStart())

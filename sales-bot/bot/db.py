@@ -34,6 +34,14 @@ CREATE TABLE IF NOT EXISTS nurture_sent (
     sent_at     TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (user_id, step_id)
 );
+CREATE TABLE IF NOT EXISTS admin_messages (
+    chat_id     INTEGER NOT NULL,
+    message_id  INTEGER NOT NULL,
+    order_id    INTEGER NOT NULL,
+    PRIMARY KEY (chat_id, message_id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_payment ON orders(provider, provider_payment_id)
+    WHERE provider_payment_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status, provider);
 """
@@ -86,13 +94,52 @@ class Database:
         await self.conn.commit()
 
     async def create_order(self, user_id: int, product_id: str, amount: int,
-                           currency: str, provider: str) -> int:
-        cur = await self.conn.execute(
-            "INSERT INTO orders (user_id, product_id, amount, currency, provider) VALUES (?, ?, ?, ?, ?)",
-            (user_id, product_id, amount, currency, provider),
-        )
+                           currency: str, provider: str, payment_id: str | None = None) -> int | None:
+        """None — заказ с таким payment_id уже есть (повторное уведомление платёжки)."""
+        try:
+            cur = await self.conn.execute(
+                """INSERT INTO orders (user_id, product_id, amount, currency, provider, provider_payment_id)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (user_id, product_id, amount, currency, provider, payment_id),
+            )
+        except aiosqlite.IntegrityError:
+            return None
         await self.conn.commit()
         return cur.lastrowid
+
+    async def get_order_by_payment_id(self, provider: str, payment_id: str) -> Order | None:
+        async with self.conn.execute(
+            "SELECT * FROM orders WHERE provider = ? AND provider_payment_id = ?", (provider, payment_id)
+        ) as cur:
+            row = await cur.fetchone()
+        return self._order(row) if row else None
+
+    async def awaiting_transfer(self, user_id: int) -> Order | None:
+        """Последний заказ «перевод на карту», по которому человек ещё не прислал чек."""
+        async with self.conn.execute(
+            """SELECT * FROM orders WHERE user_id = ? AND provider = 'transfer' AND status = 'pending'
+                 AND created_at >= datetime('now', '-3 days')
+               ORDER BY id DESC LIMIT 1""",
+            (user_id,),
+        ) as cur:
+            row = await cur.fetchone()
+        return self._order(row) if row else None
+
+    async def link_admin_message(self, chat_id: int, message_id: int, order_id: int) -> None:
+        await self.conn.execute(
+            "INSERT OR REPLACE INTO admin_messages (chat_id, message_id, order_id) VALUES (?, ?, ?)",
+            (chat_id, message_id, order_id),
+        )
+        await self.conn.commit()
+
+    async def order_for_admin_message(self, chat_id: int, message_id: int) -> Order | None:
+        async with self.conn.execute(
+            """SELECT o.* FROM admin_messages a JOIN orders o ON o.id = a.order_id
+               WHERE a.chat_id = ? AND a.message_id = ?""",
+            (chat_id, message_id),
+        ) as cur:
+            row = await cur.fetchone()
+        return self._order(row) if row else None
 
     async def set_payment_id(self, order_id: int, payment_id: str) -> None:
         await self.conn.execute(
@@ -109,7 +156,7 @@ class Database:
         """True только для первого подтверждения — защита от двойной выдачи."""
         cur = await self.conn.execute(
             """UPDATE orders SET status = 'paid', paid_at = datetime('now'), provider_payment_id = ?
-               WHERE id = ? AND status = 'pending'""",
+               WHERE id = ? AND status IN ('pending', 'review')""",
             (payment_id, order_id),
         )
         await self.conn.commit()
@@ -149,6 +196,10 @@ class Database:
             "INSERT OR IGNORE INTO claims (user_id, product_id) VALUES (?, ?)", (user_id, product_id)
         )
         await self.conn.commit()
+
+    async def user_exists(self, user_id: int) -> bool:
+        async with self.conn.execute("SELECT 1 FROM users WHERE id = ?", (user_id,)) as cur:
+            return await cur.fetchone() is not None
 
     async def mark_blocked(self, user_id: int) -> None:
         await self.conn.execute("UPDATE users SET blocked = 1 WHERE id = ?", (user_id,))
@@ -211,7 +262,9 @@ class Database:
             "SELECT step_id, COUNT(*) AS people FROM nurture_sent GROUP BY step_id ORDER BY step_id"
         ) as cur:
             nurture = [dict(r) for r in await cur.fetchall()]
-        return {"users": users, "blocked": blocked or 0, "buyers": buyers, "by_product": by_product,
+        async with self.conn.execute("SELECT COUNT(*) FROM orders WHERE status = 'review'") as cur:
+            review = (await cur.fetchone())[0]
+        return {"users": users, "blocked": blocked or 0, "review": review, "buyers": buyers, "by_product": by_product,
                 "claims": claims, "nurture": nurture}
 
     @staticmethod

@@ -13,8 +13,8 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from ..config import Config
 from ..content import ContentError, ContentStore
 from ..db import Database
-from ..keyboards import ProductCb, ScreenCb
-from ..sales import CURRENCY_LABEL
+from ..keyboards import ProductCb, ReviewCb, ScreenCb
+from ..sales import CURRENCY_LABEL, complete_order
 
 log = logging.getLogger(__name__)
 router = Router(name="admin")
@@ -58,7 +58,10 @@ async def help_(message: Message):
         "1. Напиши боту сообщение: текст, фото, видео — как обычно.\n"
         "2. Ответь на него командой /broadcast.\n"
         "   /broadcast guide — добавит кнопку на продукт или экран с этим id.\n"
-        "3. Проверь превью и выбери, кому отправить."
+        "3. Проверь превью и выбери, кому отправить.\n\n"
+        "<b>Переводы на карту</b>\n"
+        "Чек покупателя придёт сюда с кнопками «выдать / отклонить».\n"
+        "Ответь на него своим чеком из «Мой налог» — бот перешлёт покупателю."
     )
 
 
@@ -70,6 +73,8 @@ async def stats(message: Message, db: Database, store: ContentStore):
         f"Запустили бота: <b>{s['users']}</b> (заблокировали: {s['blocked']})",
         f"Купили хотя бы раз: <b>{s['buyers']}</b>",
     ]
+    if s["review"]:
+        lines.append(f"🧾 Переводов ждут проверки: <b>{s['review']}</b>")
     if s["by_product"]:
         lines.append("\n<b>Продажи</b>")
         for row in s["by_product"]:
@@ -203,3 +208,62 @@ async def _send_all(bot: Bot, db: Database, draft: Draft, users: list[int], admi
         f"✅ Рассылка завершена\n\nДоставлено: <b>{sent}</b>\n"
         f"Заблокировали бота: {blocked}\nОшибок: {failed}",
     )
+
+
+# ── Проверка переводов на карту ──────────────────────────────
+
+async def _mark_admin_message(callback: CallbackQuery, note: str) -> None:
+    message = callback.message
+    try:
+        if message.caption is not None:
+            await message.edit_caption(caption=f"{message.html_text}\n\n{note}", reply_markup=None)
+        else:
+            await message.edit_text(f"{message.html_text}\n\n{note}", reply_markup=None)
+    except Exception:
+        log.warning("Не удалось обновить сообщение с чеком")
+
+
+@router.callback_query(ReviewCb.filter())
+async def review(callback: CallbackQuery, callback_data: ReviewCb, bot: Bot, config: Config,
+                 store: ContentStore, db: Database):
+    order = await db.get_order(callback_data.order_id)
+    if order is None or order.status not in ("pending", "review"):
+        await callback.answer("Этот заказ уже обработан", show_alert=True)
+        await callback.message.edit_reply_markup(reply_markup=None)
+        return
+
+    if callback_data.ok:
+        await callback.answer("Выдаю продукт")
+        await complete_order(bot, db, store, config, order, f"transfer:{order.id}")
+        await _mark_admin_message(callback, "✅ <b>Подтверждено — продукт отправлен.</b>")
+        return
+
+    await db.set_status(order.id, "rejected")
+    await callback.answer("Отклонено")
+    try:
+        await bot.send_message(order.user_id, store.text("transfer_rejected", order=order.id))
+    except Exception:
+        log.warning("Не удалось написать покупателю %s про отклонённый заказ", order.user_id)
+    await _mark_admin_message(callback, "❌ <b>Отклонено — покупатель получил сообщение.</b>")
+
+
+class ReplyToOrder(Filter):
+    """Ответ админа на сообщение с чеком покупателя — чтобы переслать ему свой чек."""
+
+    async def __call__(self, message: Message, db: Database) -> bool | dict:
+        source = message.reply_to_message
+        if source is None or (message.text or "").startswith("/"):
+            return False
+        order = await db.order_for_admin_message(message.chat.id, source.message_id)
+        return {"order": order} if order else False
+
+
+@router.message(ReplyToOrder())
+async def send_seller_receipt(message: Message, order, bot: Bot, store: ContentStore):
+    try:
+        await bot.send_message(order.user_id, store.text("seller_receipt", order=order.id))
+        await bot.copy_message(order.user_id, message.chat.id, message.message_id)
+    except Exception:
+        await message.answer("Не получилось отправить — возможно, покупатель заблокировал бота.")
+        return
+    await message.answer(f"🧾 Чек отправлен покупателю по заказу №{order.id}.")

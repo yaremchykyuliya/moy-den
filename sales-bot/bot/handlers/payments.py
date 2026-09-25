@@ -1,3 +1,4 @@
+import html
 import logging
 
 from aiogram import Bot, F, Router
@@ -5,9 +6,9 @@ from aiogram.types import CallbackQuery, LabeledPrice, Message, PreCheckoutQuery
 
 from .. import keyboards as kb
 from ..config import Config
-from ..content import ContentStore
+from ..content import ContentStore, Product
 from ..db import Database
-from ..sales import check_yookassa_order, complete_order, deliver
+from ..sales import buyer_name, check_yookassa_order, complete_order, deliver
 from ..yookassa import YooKassaClient, YooKassaError
 
 log = logging.getLogger(__name__)
@@ -19,28 +20,72 @@ def _order_id(payload: str) -> int | None:
     return int(value) if prefix == "order" and value.isdigit() else None
 
 
+async def _paid_product(callback: CallbackQuery, product_id: str, store: ContentStore) -> Product | None:
+    product = store.product(product_id)
+    if product is None or product.free:
+        await callback.answer("Этого продукта уже нет в продаже", show_alert=True)
+        return None
+    return product
+
+
 @router.callback_query(kb.BuyCb.filter())
 async def buy(callback: CallbackQuery, callback_data: kb.BuyCb, bot: Bot, config: Config,
               store: ContentStore, db: Database, yookassa: YooKassaClient | None):
-    product = store.product(callback_data.id)
-    if product is None or product.free:
-        await callback.answer("Этого продукта уже нет в продаже", show_alert=True)
+    product = await _paid_product(callback, callback_data.id, store)
+    if product is None:
         return
-
-    user_id = callback.from_user.id
-    if await db.has_paid(user_id, product.id):
+    if await db.has_paid(callback.from_user.id, product.id):
         await callback.answer()
         await callback.message.answer(store.text("already_bought"))
-        await deliver(bot, user_id, product)
+        await deliver(bot, callback.from_user.id, product)
         return
 
-    provider = config.payment_provider
-    currency = "XTR" if provider == "stars" else "RUB"
-    amount = product.price(provider)
-    order_id = await db.create_order(user_id, product.id, amount, currency, provider)
     await callback.answer()
+    if len(config.payment_methods) == 1:
+        await _start_payment(callback, product, config.payment_methods[0], bot, config, store, db, yookassa)
+        return
+    await callback.message.answer(
+        store.text("pay_choose", product=html.escape(product.title)),
+        reply_markup=kb.pay_methods(product, config.payment_methods),
+    )
 
-    if provider == "stars":
+
+@router.callback_query(kb.PayCb.filter())
+async def pay(callback: CallbackQuery, callback_data: kb.PayCb, bot: Bot, config: Config,
+              store: ContentStore, db: Database, yookassa: YooKassaClient | None):
+    product = await _paid_product(callback, callback_data.id, store)
+    if product is None or callback_data.method not in config.payment_methods:
+        return
+    await callback.answer()
+    await _start_payment(callback, product, callback_data.method, bot, config, store, db, yookassa)
+
+
+async def _start_payment(callback: CallbackQuery, product: Product, method: str, bot: Bot,
+                         config: Config, store: ContentStore, db: Database,
+                         yookassa: YooKassaClient | None) -> None:
+    user_id = callback.from_user.id
+    title = html.escape(product.title)
+
+    if method == "tribute":
+        await callback.message.answer(
+            store.text("tribute_prompt", product=title, amount=product.price_rub),
+            reply_markup=kb.url_button("💳 Оплатить в Tribute", product.tribute_url),
+        )
+        return
+
+    currency = "XTR" if method == "stars" else "RUB"
+    amount = product.price(method)
+    order_id = await db.create_order(user_id, product.id, amount, currency, method)
+
+    if method == "transfer":
+        await callback.message.answer(
+            store.text("transfer_prompt", product=title, amount=amount, order=order_id,
+                       details=html.escape(config.transfer_details)),
+            reply_markup=kb.transfer_cancel(order_id),
+        )
+        return
+
+    if method == "stars":
         await callback.message.answer_invoice(
             title=product.title[:32],
             description=store.text("pay_prompt")[:255],
@@ -63,12 +108,55 @@ async def buy(callback: CallbackQuery, callback_data: kb.BuyCb, bot: Bot, config
         await db.set_status(order_id, "failed")
         await callback.message.answer(store.text("delivery_error"))
         return
-
     await db.set_payment_id(order_id, payment.id)
     await callback.message.answer(
         store.text("pay_prompt"), reply_markup=kb.yookassa_pay(payment.confirmation_url, order_id)
     )
 
+
+# ── Перевод на карту ─────────────────────────────────────────
+
+@router.callback_query(kb.CancelCb.filter())
+async def cancel_transfer(callback: CallbackQuery, callback_data: kb.CancelCb, db: Database):
+    order = await db.get_order(callback_data.order_id)
+    if order is None or order.user_id != callback.from_user.id or order.status != "pending":
+        await callback.answer("Этот заказ уже нельзя отменить", show_alert=True)
+        return
+    await db.set_status(order.id, "canceled")
+    await callback.answer("Заказ отменён")
+    await callback.message.edit_reply_markup(reply_markup=None)
+
+
+@router.message(F.photo | F.document)
+async def receipt(message: Message, bot: Bot, config: Config, store: ContentStore, db: Database):
+    user_id = message.from_user.id
+    order = await db.awaiting_transfer(user_id)
+    if order is None:
+        if user_id not in config.admin_ids:
+            await message.answer(store.text("transfer_no_order"))
+        return
+
+    await db.set_status(order.id, "review")
+    product = store.product(order.product_id)
+    title = html.escape(product.title) if product else order.product_id
+    caption = (
+        f"🧾 <b>Чек по заказу №{order.id}</b>\n"
+        f"{title} — <b>{order.amount} ₽</b>\n"
+        f"Покупатель: {await buyer_name(bot, user_id)} (id <code>{user_id}</code>)\n\n"
+        "Сверь поступление в банке и нажми кнопку.\n"
+        "Чтобы отправить покупателю свой чек из «Мой налог», ответь на это сообщение файлом, фото или ссылкой."
+    )
+    for admin_id in config.admin_ids:
+        try:
+            sent = await bot.copy_message(admin_id, message.chat.id, message.message_id,
+                                          caption=caption, reply_markup=kb.review(order.id))
+            await db.link_admin_message(admin_id, sent.message_id, order.id)
+        except Exception:
+            log.exception("Не удалось переслать чек админу %s", admin_id)
+    await message.answer(store.text("transfer_received", order=order.id))
+
+
+# ── Звёзды Telegram ──────────────────────────────────────────
 
 @router.pre_checkout_query()
 async def pre_checkout(query: PreCheckoutQuery, store: ContentStore, db: Database):
@@ -86,7 +174,7 @@ async def pre_checkout(query: PreCheckoutQuery, store: ContentStore, db: Databas
     if ok:
         await query.answer(ok=True)
     else:
-        await query.answer(ok=False, error_message="Этот счёт устарел. Откройте продукт в меню заново.")
+        await query.answer(ok=False, error_message="Этот счёт устарел. Открой продукт в меню заново.")
 
 
 @router.message(F.successful_payment)
@@ -100,6 +188,8 @@ async def successful_payment(message: Message, bot: Bot, config: Config,
         return
     await complete_order(bot, db, store, config, order, payment.telegram_payment_charge_id)
 
+
+# ── ЮKassa ───────────────────────────────────────────────────
 
 @router.callback_query(kb.CheckCb.filter())
 async def check_payment(callback: CallbackQuery, callback_data: kb.CheckCb, bot: Bot,

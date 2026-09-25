@@ -13,6 +13,7 @@ from .db import Database
 from .handlers import admin, payments, user
 from .nurture import run_forever as run_nurture
 from .sales import poll_yookassa
+from .tribute import start_server as start_tribute
 from .yookassa import YooKassaClient
 
 COMMANDS = [
@@ -32,7 +33,7 @@ async def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     config = load_config()
     try:
-        store = ContentStore(config.content_path, config.payment_provider)
+        store = ContentStore(config.content_path, config.payment_methods)
     except ContentError as e:
         raise SystemExit(f"Ошибка в {config.content_path.name}: {e}")
 
@@ -40,7 +41,7 @@ async def main() -> None:
     await db.connect()
     yookassa = (
         YooKassaClient(config.yookassa_shop_id, config.yookassa_secret_key)
-        if config.payment_provider == "yookassa" else None
+        if "yookassa" in config.payment_methods else None
     )
 
     bot = Bot(config.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
@@ -50,8 +51,13 @@ async def main() -> None:
     tasks = [asyncio.create_task(run_nurture(bot, db, store, config.timezone))]
     if yookassa:
         tasks.append(asyncio.create_task(poll_yookassa(bot, db, store, config, yookassa)))
+    tribute_runner = None
+    if "tribute" in config.payment_methods and config.tribute_api_key:
+        tribute_runner = await start_tribute(bot, db, store, config)
+    elif "tribute" in config.payment_methods:
+        logging.warning("Tribute без TRIBUTE_API_KEY: оплата работает, но бот не узнаёт о покупках")
     logging.info(
-        "Бот запущен. Оплата: %s. Экранов: %d, продуктов: %d", config.payment_provider,
+        "Бот запущен. Оплата: %s. Экранов: %d, продуктов: %d", ", ".join(config.payment_methods),
         len(store.current.screens), len(store.current.products),
     )
     try:
@@ -63,6 +69,8 @@ async def main() -> None:
                 await task
         if yookassa:
             await yookassa.close()
+        if tribute_runner:
+            await tribute_runner.cleanup()
         await db.close()
         await bot.session.close()
 

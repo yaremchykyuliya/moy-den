@@ -9,7 +9,11 @@ BUTTON_KINDS = ("screen", "product", "url", "my")
 REQUIRED_TEXTS = {
     "my_empty", "my_purchases", "paysupport", "pay_prompt", "pay_waiting",
     "pay_canceled", "thanks", "already_bought", "delivery_error",
+    "pay_choose", "tribute_prompt", "transfer_prompt", "transfer_received",
+    "transfer_rejected", "transfer_no_order", "seller_receipt",
 }
+RUB_METHODS = {"tribute", "transfer", "yookassa"}
+TRIBUTE_URL = re.compile(r"^https://(web\.tribute\.tg|t\.me)/\S+$")
 SLUG = re.compile(r"^[a-z0-9_-]{1,28}$")
 START_SCREEN = "start"
 
@@ -26,12 +30,19 @@ class Product:
     delivery_type: str
     delivery_value: str
     followup: "Screen | None" = None
+    tribute_url: str = ""
+    tribute_product_id: int | None = None
 
-    def price(self, provider: str) -> int:
-        return self.price_stars if provider == "stars" else self.price_rub
+    def price(self, method: str) -> int:
+        return self.price_stars if method == "stars" else self.price_rub
 
-    def price_label(self, provider: str) -> str:
-        return f"{self.price_stars} ⭐" if provider == "stars" else f"{self.price_rub} ₽"
+    def price_label(self, methods: tuple[str, ...]) -> str:
+        parts = []
+        if RUB_METHODS & set(methods):
+            parts.append(f"{self.price_rub} ₽")
+        if "stars" in methods:
+            parts.append(f"{self.price_stars} ⭐")
+        return " / ".join(parts)
 
 
 @dataclass(frozen=True)
@@ -91,7 +102,7 @@ def _image(photo, base_dir: Path, where: str) -> str | None:
     return str(path)
 
 
-def _parse_product(raw: dict, base_dir: Path, provider: str) -> Product:
+def _parse_product(raw: dict, base_dir: Path, methods: tuple[str, ...]) -> Product:
     pid = _slug(raw.get("id"), "Товар")
     where = f"Товар {pid}"
     for field in ("title", "delivery"):
@@ -102,10 +113,17 @@ def _parse_product(raw: dict, base_dir: Path, provider: str) -> Product:
     if not free:
         if not raw.get("description"):
             raise ContentError(f"{where}: у платного товара нужно описание (description)")
-        field = "price_stars" if provider == "stars" else "price_rub"
-        value = raw.get(field)
-        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
-            raise ContentError(f"{where}: {field} — цена целым положительным числом (или free: true)")
+        needed = (["price_rub"] if RUB_METHODS & set(methods) else []) + (["price_stars"] if "stars" in methods else [])
+        for field in needed:
+            value = raw.get(field)
+            if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+                raise ContentError(f"{where}: {field} — цена целым положительным числом (или free: true)")
+        if "tribute" in methods and not TRIBUTE_URL.match(str(raw.get("tribute_url") or "")):
+            raise ContentError(f"{where}: tribute_url — ссылка на продукт в Tribute, вида https://web.tribute.tg/p/…")
+
+    tribute_id = raw.get("tribute_product_id")
+    if tribute_id is not None and (not isinstance(tribute_id, int) or isinstance(tribute_id, bool)):
+        raise ContentError(f"{where}: tribute_product_id — число из кабинета Tribute")
 
     delivery = raw["delivery"]
     dtype, dvalue = delivery.get("type"), str(delivery.get("value", "")).strip()
@@ -129,6 +147,8 @@ def _parse_product(raw: dict, base_dir: Path, provider: str) -> Product:
 
     return Product(
         followup=followup,
+        tribute_url=str(raw.get("tribute_url") or "").strip(),
+        tribute_product_id=tribute_id,
         id=pid,
         title=str(raw["title"]).strip(),
         description=str(raw.get("description") or "").strip(),
@@ -227,7 +247,7 @@ def _check_links(content: Content) -> None:
         raise ContentError(f"Одинаковые id у экрана и товара: {', '.join(sorted(clash))}")
 
 
-def load_content(path: Path, provider: str) -> Content:
+def load_content(path: Path, methods: tuple[str, ...]) -> Content:
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except (OSError, yaml.YAMLError) as e:
@@ -240,7 +260,7 @@ def load_content(path: Path, provider: str) -> Content:
 
     products: dict[str, Product] = {}
     for raw in data.get("products") or []:
-        product = _parse_product(raw, path.parent, provider)
+        product = _parse_product(raw, path.parent, methods)
         if product.id in products:
             raise ContentError(f"Повторяется id товара: {product.id}")
         products[product.id] = product
@@ -270,13 +290,13 @@ def fill(text: str, **values) -> str:
 class ContentStore:
     """Держит актуальный контент; /reload подменяет его без перезапуска бота."""
 
-    def __init__(self, path: Path, provider: str):
+    def __init__(self, path: Path, methods: tuple[str, ...]):
         self.path = path
-        self.provider = provider
-        self.current = load_content(path, provider)
+        self.methods = methods
+        self.current = load_content(path, methods)
 
     def reload(self) -> Content:
-        self.current = load_content(self.path, self.provider)
+        self.current = load_content(self.path, self.methods)
         return self.current
 
     def text(self, key: str, **values) -> str:
@@ -284,6 +304,9 @@ class ContentStore:
 
     def product(self, product_id: str) -> Product | None:
         return self.current.products.get(product_id)
+
+    def product_by_tribute_id(self, tribute_id: int) -> Product | None:
+        return next((p for p in self.current.products.values() if p.tribute_product_id == tribute_id), None)
 
     def screen(self, screen_id: str) -> Screen | None:
         return self.current.screens.get(screen_id)
