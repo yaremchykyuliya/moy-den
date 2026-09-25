@@ -32,6 +32,9 @@ BOX_LABELS = {
     "good": "Стало",
     "author": "",
     "next": "Что дальше",
+    "lead": "",
+    "does": "Что умеет",
+    "try": "Попробуй первым",
 }
 
 BOT = os.environ.get("GUIDE_BOT", "usefulclaudebot")
