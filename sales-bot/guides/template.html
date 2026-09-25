@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>{{title}}</title>
+<style>
+{{fonts}}
+:root{
+  --paper:#F6F1E7; --card:#FFFCF5; --ink:#38332B; --ink-soft:#8B8375;
+  --green:#5A6E4C; --green-deep:#3F4F35; --green-mist:#E4E8DC; --line:#E7E0D2;
+  --serif:'Cormorant Garamond',Georgia,serif; --sans:'Manrope','DejaVu Sans',sans-serif;
+}
+@page{
+  size:148mm 210mm; margin:15mm 13mm 17mm; background:var(--paper);
+  @bottom-left{content:"Гайд {{number}} · {{title}}"; font:500 6.8pt var(--sans); color:#A79F90; letter-spacing:.02em}
+  @bottom-right{content:counter(page); font:500 7.5pt var(--sans); color:#A79F90}
+}
+@page cover{
+  margin:0;
+  @bottom-left{content:none} @bottom-right{content:none}
+}
+*{box-sizing:border-box}
+html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{margin:0;font-variant-numeric:lining-nums;background:var(--paper);color:var(--ink);font:400 9.6pt/1.62 var(--sans);
+  hyphens:auto;-webkit-hyphens:auto;orphans:3;widows:3}
+
+/* ── Обложка ─────────────────────────────── */
+.cover{page:cover;height:210mm;padding:18mm 14mm 16mm;display:flex;flex-direction:column;
+  background:var(--paper);position:relative;overflow:hidden;break-after:page}
+.cover::before{content:"";position:absolute;right:-38mm;top:-30mm;width:112mm;height:112mm;
+  border-radius:50%;background:var(--green-mist)}
+.cover::after{content:"";position:absolute;right:14mm;top:62mm;width:15mm;height:15mm;
+  border-radius:50%;background:var(--green)}
+.kicker{position:relative;font:700 7pt var(--sans);letter-spacing:.2em;text-transform:uppercase;color:var(--green)}
+.num{position:relative;font-variant-numeric:lining-nums;font:500 64pt/1 var(--serif);color:var(--green-deep);margin:8mm 0 0}
+.cover h1{position:relative;font:600 29pt/1.06 var(--serif);margin:auto 0 5mm;color:var(--ink);
+  letter-spacing:-.005em;hyphens:none}
+.promise{font:italic 500 14.5pt/1.3 var(--serif);color:var(--green-deep);margin:0 0 9mm;max-width:108mm}
+.chips{display:flex;flex-direction:column;gap:2.4mm;margin-bottom:10mm}
+.chip{display:flex;gap:3mm;align-items:baseline;font-size:8.6pt;line-height:1.45}
+.chip b{flex:none;width:17mm;font:700 6.6pt var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--green)}
+.cover-foot{border-top:1px solid var(--line);padding-top:3.5mm;font-size:7.2pt;color:var(--ink-soft);line-height:1.5}
+
+/* ── Текст ───────────────────────────────── */
+h2{font:600 17pt/1.15 var(--serif);color:var(--green-deep);margin:7mm 0 2.5mm;break-after:avoid;hyphens:none}
+h2:first-child{margin-top:0}
+h3{font:700 8pt var(--sans);letter-spacing:.12em;text-transform:uppercase;color:var(--green);
+  margin:5mm 0 1.5mm;break-after:avoid}
+p{margin:0 0 2.6mm}
+ul,ol{margin:0 0 3mm;padding-left:5mm}
+li{margin:0 0 1.2mm;padding-left:.5mm}
+li::marker{color:var(--green)}
+strong{font-weight:700;color:var(--ink)}
+em{font-style:normal;color:var(--green-deep);font-weight:500}
+hr{border:none;border-top:1px solid var(--line);margin:6mm 0}
+code{font-family:var(--sans);background:var(--green-mist);padding:.2mm 1.2mm;border-radius:1.2mm;font-size:.95em}
+
+table{width:100%;border-collapse:collapse;margin:1mm 0 4mm;font-size:8.4pt;line-height:1.45}
+tr{break-inside:avoid}
+th{font:700 6.6pt var(--sans);letter-spacing:.12em;text-transform:uppercase;color:var(--green);
+  text-align:left;padding:0 2.5mm 1.8mm 0;border-bottom:1.2px solid var(--green)}
+td{padding:2mm 2.5mm 2mm 0;border-bottom:1px solid var(--line);vertical-align:top}
+td:first-child{font-weight:700;width:34%}
+
+/* ── Блоки ───────────────────────────────── */
+.box{border-radius:3.2mm;padding:3.6mm 4.2mm 3.2mm;margin:2.5mm 0 4mm;break-inside:avoid}
+.box .label{font:700 6.4pt var(--sans);letter-spacing:.16em;text-transform:uppercase;margin-bottom:1.6mm}
+.box .inner>*:last-child{margin-bottom:0}
+.box ul,.box ol{margin-bottom:0}
+
+.prompt{background:var(--card);border:1px solid var(--line);border-left:2.4mm solid var(--green);
+  box-shadow:0 1mm 3mm rgba(88,76,52,.06)}
+.prompt .label{color:var(--green)}
+.prompt .inner{font:500 9pt/1.6 var(--sans);color:var(--ink)}
+.slot{background:var(--green-mist);color:var(--green-deep);border-radius:1mm;padding:0 1mm;
+  -webkit-box-decoration-break:clone;box-decoration-break:clone}
+
+.result{background:var(--green-mist)} .result .label{color:var(--green-deep)}
+.why{background:transparent;border:1px solid var(--green);} .why .label{color:var(--green)}
+.check{background:var(--card);border:1px dashed var(--green)} .check .label{color:var(--green)}
+.check ul{list-style:none;padding-left:0}
+.check li{padding-left:5.5mm;position:relative}
+.check li::before{content:"";position:absolute;left:0;top:1.3mm;width:2.6mm;height:2.6mm;
+  border:1.2px solid var(--green);border-radius:.7mm}
+.warn{background:#F1E6D6;border-left:1.2mm solid #B98B5E} .warn .label{color:#8E6440}
+.note{background:var(--card);border:1px solid var(--line)}
+.bad{background:#EFEAE0;margin-bottom:1.5mm} .bad .label{color:var(--ink-soft)}
+.bad .inner{color:#6E675B}
+.good{background:var(--card);border:1px solid var(--green);margin-top:0} .good .label{color:var(--green)}
+.author{border-left:1px solid var(--green);border-radius:0;padding:.5mm 0 .5mm 5mm;
+  font:italic 500 12.4pt/1.42 var(--serif);color:var(--green-deep)}
+.next{background:var(--green-deep);color:var(--paper);padding:5mm 5mm 4.4mm;margin-top:6mm}
+.next .label{color:#C9D3BC}
+.next strong{color:#fff}
+.next em{color:#DCE5CF}
+.stamp{margin-top:6mm;font-size:7.2pt;color:var(--ink-soft);border-top:1px solid var(--line);padding-top:3mm}
+.cover h1,h2,.num,.promise,.author,.box .inner{font-variant-numeric:lining-nums}
+</style>
+</head>
+<body>
+<section class="cover">
+  <div class="kicker">Бесплатный гайд</div>
+  <div class="num">{{number}}</div>
+  <h1>{{title}}</h1>
+  <p class="promise">{{promise}}</p>
+  <div class="chips">
+    <div class="chip"><b>Время</b><span>{{time}}</span></div>
+    <div class="chip"><b>Для кого</b><span>{{for}}</span></div>
+  </div>
+  <div class="cover-foot">Актуально на {{date}}. Сервисы часто меняют кнопки и названия — если что-то выглядит иначе, ищи по смыслу.</div>
+</section>
+<main>
+{{body}}
+<p class="stamp">Актуально на {{date}}. Нейросети ошибаются — всё важное проверяй в первоисточнике.</p>
+</main>
+</body>
+</html>

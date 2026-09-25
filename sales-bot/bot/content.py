@@ -25,6 +25,7 @@ class Product:
     photo: str | None
     delivery_type: str
     delivery_value: str
+    followup: "Screen | None" = None
 
     def price(self, provider: str) -> int:
         return self.price_stars if provider == "stars" else self.price_rub
@@ -110,7 +111,14 @@ def _parse_product(raw: dict, base_dir: Path, provider: str) -> Product:
     if dtype == "channel" and not re.fullmatch(r"-100\d+", dvalue):
         raise ContentError(f"{where}: ID канала вида -100XXXXXXXXXX")
 
+    followup = None
+    if raw.get("followup"):
+        if not free:
+            raise ContentError(f"{where}: followup бывает только у бесплатных продуктов")
+        followup = _parse_screen(START_SCREEN, raw["followup"], base_dir, where=f"{where}, followup")
+
     return Product(
+        followup=followup,
         id=pid,
         title=str(raw["title"]).strip(),
         description=str(raw.get("description") or "").strip(),
@@ -138,8 +146,8 @@ def _parse_button(raw, where: str) -> Button:
     return Button(text=str(raw["text"]).strip(), kind=kind, target=target)
 
 
-def _parse_screen(sid: str, raw: dict, base_dir: Path) -> Screen:
-    where = f"Экран {sid}"
+def _parse_screen(sid: str, raw: dict, base_dir: Path, where: str | None = None) -> Screen:
+    where = where or f"Экран {sid}"
     if not isinstance(raw, dict) or not raw.get("text"):
         raise ContentError(f"{where}: не заполнен text")
     rows = []
@@ -157,13 +165,15 @@ def _parse_screen(sid: str, raw: dict, base_dir: Path) -> Screen:
 
 
 def _check_links(content: Content) -> None:
-    for screen in content.screens.values():
+    holders = [(f"Экран {s.id}", s) for s in content.screens.values()]
+    holders += [(f"Товар {p.id}, followup", p.followup) for p in content.products.values() if p.followup]
+    for where, screen in holders:
         for row in screen.rows:
             for b in row:
                 if b.kind == "screen" and b.target not in content.screens:
-                    raise ContentError(f"Экран {screen.id}, кнопка «{b.text}»: нет экрана «{b.target}»")
+                    raise ContentError(f"{where}, кнопка «{b.text}»: нет экрана «{b.target}»")
                 if b.kind == "product" and b.target not in content.products:
-                    raise ContentError(f"Экран {screen.id}, кнопка «{b.text}»: нет товара «{b.target}»")
+                    raise ContentError(f"{where}, кнопка «{b.text}»: нет товара «{b.target}»")
     clash = content.screens.keys() & content.products.keys()
     if clash:
         raise ContentError(f"Одинаковые id у экрана и товара: {', '.join(sorted(clash))}")

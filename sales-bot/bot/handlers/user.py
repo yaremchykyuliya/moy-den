@@ -47,6 +47,8 @@ async def _open_screen(target, screen_id: str, store: ContentStore) -> None:
 async def _give_free(bot: Bot, user_id: int, product: Product, db: Database) -> None:
     await db.record_claim(user_id, product.id)
     await deliver(bot, user_id, product)
+    if product.followup:
+        await bot.send_message(user_id, product.followup.text, reply_markup=kb.screen(product.followup))
 
 
 async def _open_product(target, product: Product, back_to: str, bot: Bot,
