@@ -17,8 +17,8 @@ fi
 echo "❌ Напрямую api.telegram.org не открывается."
 
 if [ -z "$PROXY" ]; then
-  echo "   Нужен прокси: впиши TELEGRAM_PROXY в $BOT/.env и запусти проверку снова."
-  echo "   Или выбери для сервера зарубежную локацию."
+  echo "   Нужен прокси: впиши TELEGRAM_PROXY в $BOT/.env, перезапусти бота"
+  echo "   (sudo systemctl restart sales-bot) и запусти эту проверку снова."
   exit 1
 fi
 if reach "$PROXY"; then
