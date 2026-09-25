@@ -2,7 +2,8 @@ import html
 
 from aiogram import Bot, Router
 from aiogram.filters import Command, CommandObject, CommandStart
-from aiogram.types import CallbackQuery, FSInputFile, InlineKeyboardMarkup, Message, User
+from aiogram.types import (CallbackQuery, CopyTextButton, FSInputFile, InlineKeyboardButton,
+                           InlineKeyboardMarkup, Message, User)
 
 from .. import keyboards as kb
 from ..content import START_SCREEN, ContentStore, Product, fill
@@ -76,7 +77,32 @@ async def start(message: Message, command: CommandObject, bot: Bot,
     if product:
         await _open_product(message, product, START_SCREEN, bot, store, db)
         return
+    found = store.template(arg)
+    if found:
+        await _send_template(message, *found, bot=bot, store=store, db=db)
+        return
     await _open_screen(message, arg if store.screen(arg) else START_SCREEN, store)
+
+
+COPY_BUTTON_LIMIT = 256  # столько символов Telegram разрешает в кнопке «Копировать»
+
+
+async def _send_template(message: Message, product: Product, num: int, item: dict,
+                         bot: Bot, store: ContentStore, db: Database) -> None:
+    title = html.escape(product.title)
+    if not await db.has_paid(message.from_user.id, product.id):
+        await message.answer(store.text("template_locked", product=title))
+        await _open_product(message, product, START_SCREEN, bot, store, db)
+        return
+    rows = []
+    if len(item["text"]) <= COPY_BUTTON_LIMIT:
+        rows.append([InlineKeyboardButton(text="📋 Скопировать", copy_text=CopyTextButton(text=item["text"]))])
+    rows.append([InlineKeyboardButton(text=f"📚 {product.title}", callback_data=kb.GetCb(id=product.id).pack())])
+    await message.answer(
+        f"<b>№{num} · {html.escape(item['title'])}</b>\n\n<pre>{html.escape(item['text'])}</pre>\n\n"
+        + store.text("template_hint"),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+    )
 
 
 @router.message(Command("menu"))

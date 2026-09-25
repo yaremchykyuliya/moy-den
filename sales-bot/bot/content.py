@@ -1,3 +1,4 @@
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,6 +12,7 @@ REQUIRED_TEXTS = {
     "pay_canceled", "thanks", "already_bought", "delivery_error",
     "pay_choose", "tribute_prompt", "transfer_prompt", "transfer_received",
     "transfer_rejected", "transfer_no_order", "seller_receipt",
+    "template_hint", "template_locked",
 }
 RUB_METHODS = {"tribute", "transfer", "yookassa"}
 TRIBUTE_URL = re.compile(r"^https://(web\.tribute\.tg|t\.me)/\S+$")
@@ -32,6 +34,8 @@ class Product:
     followup: "Screen | None" = None
     tribute_url: str = ""
     tribute_product_id: int | None = None
+    templates_prefix: str = ""
+    templates: "dict[int, dict] | None" = None
 
     def price(self, method: str) -> int:
         return self.price_stars if method == "stars" else self.price_rub
@@ -102,6 +106,24 @@ def _image(photo, base_dir: Path, where: str) -> str | None:
     return str(path)
 
 
+def _load_templates(value, base_dir: Path, where: str) -> tuple[str, dict[int, dict] | None]:
+    """Шаблоны для кнопки «Скопировать» — JSON, который собирает guides/build.py рядом с PDF."""
+    if not value:
+        return "", None
+    path = base_dir / str(value)
+    if not path.is_file():
+        raise ContentError(f"{where}: файл шаблонов не найден — {path}")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        prefix = str(data["prefix"])
+        items = {int(k): {"title": str(v["title"]), "text": str(v["text"])} for k, v in data["items"].items()}
+    except (ValueError, KeyError, TypeError, AttributeError) as e:
+        raise ContentError(f"{where}: файл шаблонов повреждён — {e}")
+    if not re.fullmatch(r"[a-z]{1,3}", prefix) or not items:
+        raise ContentError(f"{where}: в файле шаблонов нет префикса или самих шаблонов")
+    return prefix, items
+
+
 def _parse_product(raw: dict, base_dir: Path, methods: tuple[str, ...]) -> Product:
     pid = _slug(raw.get("id"), "Товар")
     where = f"Товар {pid}"
@@ -120,6 +142,8 @@ def _parse_product(raw: dict, base_dir: Path, methods: tuple[str, ...]) -> Produ
                 raise ContentError(f"{where}: {field} — цена целым положительным числом (или free: true)")
         if "tribute" in methods and not TRIBUTE_URL.match(str(raw.get("tribute_url") or "")):
             raise ContentError(f"{where}: tribute_url — ссылка на продукт в Tribute, вида https://web.tribute.tg/p/…")
+
+    templates_prefix, templates = _load_templates(raw.get("templates"), base_dir, where)
 
     tribute_id = raw.get("tribute_product_id")
     if tribute_id is not None and (not isinstance(tribute_id, int) or isinstance(tribute_id, bool)):
@@ -149,6 +173,8 @@ def _parse_product(raw: dict, base_dir: Path, methods: tuple[str, ...]) -> Produ
         followup=followup,
         tribute_url=str(raw.get("tribute_url") or "").strip(),
         tribute_product_id=tribute_id,
+        templates_prefix=templates_prefix,
+        templates=templates,
         id=pid,
         title=str(raw["title"]).strip(),
         description=str(raw.get("description") or "").strip(),
@@ -304,6 +330,17 @@ class ContentStore:
 
     def product(self, product_id: str) -> Product | None:
         return self.current.products.get(product_id)
+
+    def template(self, code: str) -> tuple[Product, int, dict] | None:
+        """Шаблон по коду из ссылки «Скопировать», например p031."""
+        match = re.fullmatch(r"([a-z]{1,3})(\d{3})", code)
+        if not match:
+            return None
+        prefix, num = match.group(1), int(match.group(2))
+        for product in self.current.products.values():
+            if product.templates and product.templates_prefix == prefix and num in product.templates:
+                return product, num, product.templates[num]
+        return None
 
     def product_by_tribute_id(self, tribute_id: int) -> Product | None:
         return next((p for p in self.current.products.values() if p.tribute_product_id == tribute_id), None)
