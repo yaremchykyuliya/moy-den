@@ -370,8 +370,8 @@ products:
       Под каждым шаблоном — кнопка «Скопировать». Подходит для любой чат-нейросети.
 
       PDF, 10 страниц. Придёт в этот чат сразу после оплаты.
-    price_rub: 990
-    price_stars: 500
+    price_rub: 490
+    price_stars: 250
     tribute_url: https://web.tribute.tg/p/ZAMENI
     # tribute_product_id: 123456
     # Шаблоны для кнопки «Скопировать» — собираются вместе с PDF
