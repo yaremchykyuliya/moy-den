@@ -27,6 +27,7 @@ class Config:
     tribute_webhook_host: str = "127.0.0.1"
     tribute_webhook_port: int = 8080
     tribute_webhook_path: str = "/tribute/webhook"
+    telegram_proxy: str = ""
 
 
 def _admin_ids(raw: str) -> frozenset[int]:
@@ -43,6 +44,13 @@ def _methods() -> tuple[str, ...]:
     if unknown or not methods:
         raise SystemExit(f"PAYMENT_METHODS: через запятую из {', '.join(METHODS)}. Непонятно: {', '.join(unknown)}")
     return methods
+
+
+def _proxy(raw: str) -> str:
+    raw = raw.strip()
+    if raw and not raw.startswith(("http://", "https://", "socks5://", "socks4://")):
+        raise SystemExit("TELEGRAM_PROXY — адрес вида socks5://логин:пароль@хост:порт или http://хост:порт")
+    return raw
 
 
 def load_config() -> Config:
@@ -90,4 +98,5 @@ def load_config() -> Config:
         tribute_webhook_host=os.getenv("TRIBUTE_WEBHOOK_HOST", "127.0.0.1").strip(),
         tribute_webhook_port=port,
         tribute_webhook_path=os.getenv("TRIBUTE_WEBHOOK_PATH", "/tribute/webhook").strip(),
+        telegram_proxy=_proxy(os.getenv("TELEGRAM_PROXY", "")),
     )

@@ -256,6 +256,27 @@ tribute_url: https://web.tribute.tg/p/XXXX
 
 **Какой сервер:** любой VPS с Ubuntu 22.04 или 24.04, 1 ГБ памяти хватит с запасом. Боту нужен доступ к api.telegram.org, а для ЮKassa — к api.yookassa.ru.
 
+### Сервер в Timeweb Cloud
+
+1. В [Timeweb Cloud](https://timeweb.cloud) создай облачный сервер:
+   - ОС — **Ubuntu 24.04**;
+   - самая простая конфигурация — боту хватит 1 ГБ памяти;
+   - регион — Россия.
+2. Когда сервер создастся, в панели будут его IP-адрес и пароль root. Подключиться можно из терминала: `ssh root@IP-адрес`. Или через консоль прямо в панели Timeweb.
+3. Выполни команду установки ниже. В конце она сама проверит, открывается ли с сервера Telegram.
+
+Точные названия кнопок в панели Timeweb я не вижу и не проверял — ориентируйся по смыслу.
+
+**Если Telegram с сервера не открывается.** В 2025 году в России ограничивали работу Telegram; как с этим сейчас, я точно не знаю — проверка покажет. Если связи нет, бот может работать через прокси: впиши его в `.env` и перезапусти бота.
+```
+TELEGRAM_PROXY=socks5://логин:пароль@хост:порт
+```
+Через прокси идёт только связь с Telegram. Tribute, ЮKassa и база работают напрямую.
+
+Проверить связь ещё раз: `sudo bash /opt/moy-den/sales-bot/deploy/check.sh`.
+
+**Почему российский сервер — хороший выбор.** Насколько я знаю, закон о персональных данных (152-ФЗ) требует хранить базу данных россиян на территории России. А бот хранит Telegram ID, имена и покупки. Поэтому российский сервер с прокси для Telegram лучше, чем зарубежный сервер. Оформление самих персональных данных (политика обработки, уведомление Роскомнадзора) — вопрос к юристу.
+
 **Установка — одна команда** (подключившись к серверу по SSH):
 ```bash
 curl -fsSL https://raw.githubusercontent.com/yaremchykyuliya/moy-den/main/sales-bot/deploy/install.sh | sudo bash
@@ -275,6 +296,7 @@ curl -fsSL https://raw.githubusercontent.com/yaremchykyuliya/moy-den/main/sales-
 | Что | Команда |
 |---|---|
 | Смотреть, что делает бот | `sudo journalctl -u sales-bot -f` |
+| Проверить связь с Telegram | `sudo bash /opt/moy-den/sales-bot/deploy/check.sh` |
 | Перезапустить | `sudo systemctl restart sales-bot` |
 | Обновить до новой версии | `sudo bash /opt/moy-den/sales-bot/deploy/update.sh` |
 | Поправить тексты | `sudo nano /opt/moy-den/sales-bot/content.yaml`, потом `/reload` в боте |

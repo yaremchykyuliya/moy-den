@@ -4,6 +4,7 @@ import logging
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.types import BotCommand
 
@@ -44,7 +45,8 @@ async def main() -> None:
         if "yookassa" in config.payment_methods else None
     )
 
-    bot = Bot(config.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    session = AiohttpSession(proxy=config.telegram_proxy) if config.telegram_proxy else None
+    bot = Bot(config.bot_token, session=session, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = build_dispatcher(config=config, store=store, db=db, yookassa=yookassa)
     await bot.set_my_commands(COMMANDS)
 

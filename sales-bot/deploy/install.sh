@@ -44,6 +44,10 @@ CRON
 systemctl daemon-reload
 systemctl enable -q sales-bot
 
+echo
+bash "$BOT/deploy/check.sh" || true
+echo
+
 if [ "${NEED_ENV:-0}" = 1 ]; then
   echo
   echo "Почти готово. Осталось:"
