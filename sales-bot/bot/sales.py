@@ -1,6 +1,8 @@
 import asyncio
 import html
 import logging
+import re
+from pathlib import Path
 
 from aiogram import Bot
 from aiogram.types import FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup
@@ -19,12 +21,19 @@ def _open_button(text: str, url: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=text, url=url)]])
 
 
+def _file_name(product: Product, path: str) -> str:
+    """Понятное имя файла при сохранении: «Гайд 01 · Первые 3 минуты с нейросетью.pdf»."""
+    name = re.sub(r'[\\/:*?"<>|]+', " ", product.title).strip() or "file"
+    return f"{name}{Path(path).suffix}"
+
+
 async def deliver(bot: Bot, user_id: int, product: Product) -> None:
     title = html.escape(product.title)
     kind, value = product.delivery_type, product.delivery_value
 
     if kind == "file":
-        await bot.send_document(user_id, FSInputFile(value), caption=f"<b>{title}</b>")
+        await bot.send_document(user_id, FSInputFile(value, filename=_file_name(product, value)),
+                                caption=f"<b>{title}</b>")
     elif kind == "link":
         await bot.send_message(user_id, f"<b>{title}</b>", reply_markup=_open_button("Открыть", value))
     elif kind == "text":
