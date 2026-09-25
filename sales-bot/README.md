@@ -219,8 +219,38 @@ screens:
 
 ---
 
-## Чтобы бот работал круглосуточно
-Пока бот запущен на твоём компьютере, он работает, только когда компьютер включён. Для реальных продаж нужен сервер, который работает 24/7 — например, недорогой VPS. Когда выберешь хостинг, могу помочь его настроить.
+## Запуск на сервере (круглосуточно)
+
+Пока бот запущен на твоём компьютере, он работает, только когда компьютер включён. Для продаж нужен сервер.
+
+**Какой сервер:** любой VPS с Ubuntu 22.04 или 24.04, 1 ГБ памяти хватит с запасом. Боту нужен доступ к api.telegram.org, а для ЮKassa — к api.yookassa.ru.
+
+**Установка — одна команда** (подключившись к серверу по SSH):
+```bash
+curl -fsSL https://raw.githubusercontent.com/yaremchykyuliya/moy-den/main/sales-bot/deploy/install.sh | sudo bash
+```
+Скрипт поставит всё нужное, создаст отдельного пользователя `salesbot`, настроит автозапуск и ночную копию базы. В конце он подскажет три шага:
+
+1. Заполнить настройки: `sudo nano /opt/moy-den/sales-bot/.env`
+2. Загрузить платные PDF с компьютера:
+   ```bash
+   scp neyroseti-s-nulya.pdf biblioteka-zaprosov.pdf root@АДРЕС_СЕРВЕРА:/opt/moy-den/sales-bot/products/paid/
+   sudo chown salesbot:salesbot /opt/moy-den/sales-bot/products/paid/*
+   ```
+3. Запустить: `sudo systemctl start sales-bot`
+
+**Полезные команды**
+
+| Что | Команда |
+|---|---|
+| Смотреть, что делает бот | `sudo journalctl -u sales-bot -f` |
+| Перезапустить | `sudo systemctl restart sales-bot` |
+| Обновить до новой версии | `sudo bash /opt/moy-den/sales-bot/deploy/update.sh` |
+| Поправить тексты | `sudo nano /opt/moy-den/sales-bot/content.yaml`, потом `/reload` в боте |
+
+Копии базы с покупками лежат в `/opt/moy-den/sales-bot/backups/`, хранятся последние 14 дней.
+
+⚠️ Скрипт берёт код из ветки `main`. Пока изменения не слиты в `main`, запускай так: `curl … | sudo BRANCH=имя-ветки bash` — ссылку тоже поменяй с `main` на имя ветки.
 
 ## Файлы
 ```
