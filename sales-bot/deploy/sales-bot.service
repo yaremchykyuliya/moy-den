@@ -1,0 +1,15 @@
+[Unit]
+Description=Telegram-бот: продажа цифровых продуктов
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=salesbot
+WorkingDirectory=/opt/moy-den/sales-bot
+ExecStart=/opt/moy-den/sales-bot/.venv/bin/python -m bot
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

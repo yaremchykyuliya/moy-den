@@ -1,0 +1,8 @@
+.env
+*.db
+__pycache__/
+.venv/
+# Платные материалы: репозиторий публичный, их здесь быть не должно
+guides/paid/
+products/paid/
+backups/

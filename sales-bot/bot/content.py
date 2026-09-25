@@ -1,0 +1,312 @@
+import re
+from dataclasses import dataclass
+from pathlib import Path
+
+import yaml
+
+DELIVERY_TYPES = {"file", "link", "text", "channel"}
+BUTTON_KINDS = ("screen", "product", "url", "my")
+REQUIRED_TEXTS = {
+    "my_empty", "my_purchases", "paysupport", "pay_prompt", "pay_waiting",
+    "pay_canceled", "thanks", "already_bought", "delivery_error",
+    "pay_choose", "tribute_prompt", "transfer_prompt", "transfer_received",
+    "transfer_rejected", "transfer_no_order", "seller_receipt",
+}
+RUB_METHODS = {"tribute", "transfer", "yookassa"}
+TRIBUTE_URL = re.compile(r"^https://(web\.tribute\.tg|t\.me)/\S+$")
+SLUG = re.compile(r"^[a-z0-9_-]{1,28}$")
+START_SCREEN = "start"
+
+
+@dataclass(frozen=True)
+class Product:
+    id: str
+    title: str
+    description: str
+    free: bool
+    price_rub: int
+    price_stars: int
+    photo: str | None
+    delivery_type: str
+    delivery_value: str
+    followup: "Screen | None" = None
+    tribute_url: str = ""
+    tribute_product_id: int | None = None
+
+    def price(self, method: str) -> int:
+        return self.price_stars if method == "stars" else self.price_rub
+
+    def price_label(self, methods: tuple[str, ...]) -> str:
+        parts = []
+        if RUB_METHODS & set(methods):
+            parts.append(f"{self.price_rub} ₽")
+        if "stars" in methods:
+            parts.append(f"{self.price_stars} ⭐")
+        return " / ".join(parts)
+
+
+@dataclass(frozen=True)
+class Button:
+    text: str
+    kind: str
+    target: str
+
+
+@dataclass(frozen=True)
+class Screen:
+    id: str
+    text: str
+    photo: str | None
+    rows: tuple[tuple[Button, ...], ...]
+
+
+@dataclass(frozen=True)
+class NurtureStep:
+    id: str
+    delay_minutes: int
+    screen: Screen
+    skip_if_bought: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class Content:
+    texts: dict[str, str]
+    screens: dict[str, Screen]
+    products: dict[str, Product]
+    nurture: tuple[NurtureStep, ...] = ()
+    nurture_hours: tuple[int, int] = (10, 21)
+
+
+class ContentError(Exception):
+    pass
+
+
+def _slug(value, where: str) -> str:
+    value = str(value or "")
+    if not SLUG.match(value):
+        raise ContentError(
+            f"{where}: id «{value}» — только латиница в нижнем регистре, цифры, _ и -, до 28 символов"
+        )
+    return value
+
+
+def _image(photo, base_dir: Path, where: str) -> str | None:
+    if not photo:
+        return None
+    photo = str(photo)
+    if photo.startswith(("http://", "https://")):
+        return photo
+    path = base_dir / photo
+    if not path.is_file():
+        raise ContentError(f"{where}: картинка не найдена — {path}")
+    return str(path)
+
+
+def _parse_product(raw: dict, base_dir: Path, methods: tuple[str, ...]) -> Product:
+    pid = _slug(raw.get("id"), "Товар")
+    where = f"Товар {pid}"
+    for field in ("title", "delivery"):
+        if not raw.get(field):
+            raise ContentError(f"{where}: не заполнено поле {field}")
+
+    free = bool(raw.get("free", False))
+    if not free:
+        if not raw.get("description"):
+            raise ContentError(f"{where}: у платного товара нужно описание (description)")
+        needed = (["price_rub"] if RUB_METHODS & set(methods) else []) + (["price_stars"] if "stars" in methods else [])
+        for field in needed:
+            value = raw.get(field)
+            if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+                raise ContentError(f"{where}: {field} — цена целым положительным числом (или free: true)")
+        if "tribute" in methods and not TRIBUTE_URL.match(str(raw.get("tribute_url") or "")):
+            raise ContentError(f"{where}: tribute_url — ссылка на продукт в Tribute, вида https://web.tribute.tg/p/…")
+
+    tribute_id = raw.get("tribute_product_id")
+    if tribute_id is not None and (not isinstance(tribute_id, int) or isinstance(tribute_id, bool)):
+        raise ContentError(f"{where}: tribute_product_id — число из кабинета Tribute")
+
+    delivery = raw["delivery"]
+    dtype, dvalue = delivery.get("type"), str(delivery.get("value", "")).strip()
+    if dtype not in DELIVERY_TYPES:
+        raise ContentError(f"{where}: delivery.type — одно из {sorted(DELIVERY_TYPES)}")
+    if not dvalue:
+        raise ContentError(f"{where}: не заполнено delivery.value")
+    if dtype == "file":
+        path = base_dir / dvalue
+        if not path.is_file():
+            raise ContentError(f"{where}: файл не найден — {path}")
+        dvalue = str(path)
+    if dtype == "channel" and not re.fullmatch(r"-100\d+", dvalue):
+        raise ContentError(f"{where}: ID канала вида -100XXXXXXXXXX")
+
+    followup = None
+    if raw.get("followup"):
+        if not free:
+            raise ContentError(f"{where}: followup бывает только у бесплатных продуктов")
+        followup = _parse_screen(START_SCREEN, raw["followup"], base_dir, where=f"{where}, followup")
+
+    return Product(
+        followup=followup,
+        tribute_url=str(raw.get("tribute_url") or "").strip(),
+        tribute_product_id=tribute_id,
+        id=pid,
+        title=str(raw["title"]).strip(),
+        description=str(raw.get("description") or "").strip(),
+        free=free,
+        price_rub=raw.get("price_rub") or 0,
+        price_stars=raw.get("price_stars") or 0,
+        photo=_image(raw.get("photo"), base_dir, where),
+        delivery_type=dtype,
+        delivery_value=dvalue,
+    )
+
+
+def _parse_button(raw, where: str) -> Button:
+    if not isinstance(raw, dict) or not raw.get("text"):
+        raise ContentError(f"{where}: у кнопки должен быть text")
+    kinds = [k for k in BUTTON_KINDS if k in raw]
+    if len(kinds) != 1:
+        raise ContentError(
+            f"{where}, кнопка «{raw['text']}»: укажи ровно одно из screen / product / url / my"
+        )
+    kind = kinds[0]
+    target = str(raw[kind]).strip() if kind != "my" else ""
+    if kind == "url" and not target.startswith(("https://", "http://", "tg://")):
+        raise ContentError(f"{where}, кнопка «{raw['text']}»: url должен начинаться с https://")
+    return Button(text=str(raw["text"]).strip(), kind=kind, target=target)
+
+
+def _parse_screen(sid: str, raw: dict, base_dir: Path, where: str | None = None) -> Screen:
+    where = where or f"Экран {sid}"
+    if not isinstance(raw, dict) or not raw.get("text"):
+        raise ContentError(f"{where}: не заполнен text")
+    rows = []
+    for item in raw.get("buttons") or []:
+        row = item if isinstance(item, list) else [item]
+        if not 1 <= len(row) <= 8:
+            raise ContentError(f"{where}: в одном ряду от 1 до 8 кнопок")
+        rows.append(tuple(_parse_button(b, where) for b in row))
+    return Screen(
+        id=sid,
+        text=str(raw["text"]).strip(),
+        photo=_image(raw.get("photo"), base_dir, where),
+        rows=tuple(rows),
+    )
+
+
+DELAY = re.compile(r"^(\d+)\s*([mhd])$")
+DELAY_UNITS = {"m": 1, "h": 60, "d": 1440}
+
+
+def _parse_nurture(raw_steps, base_dir: Path) -> tuple[NurtureStep, ...]:
+    steps, seen = [], set()
+    for raw in raw_steps or []:
+        sid = _slug(raw.get("id"), "Прогрев")
+        if sid in seen:
+            raise ContentError(f"Прогрев: повторяется id шага {sid}")
+        seen.add(sid)
+        match = DELAY.match(str(raw.get("after", "")).strip())
+        if not match:
+            raise ContentError(f"Прогрев {sid}: after — например 30m, 24h или 3d")
+        skip = raw.get("skip_if_bought") or []
+        skip = tuple(skip if isinstance(skip, list) else [skip])
+        steps.append(NurtureStep(
+            id=sid,
+            delay_minutes=int(match.group(1)) * DELAY_UNITS[match.group(2)],
+            screen=_parse_screen(START_SCREEN, raw, base_dir, where=f"Прогрев {sid}"),
+            skip_if_bought=tuple(str(x) for x in skip),
+        ))
+    return tuple(sorted(steps, key=lambda st: st.delay_minutes))
+
+
+def _parse_hours(raw) -> tuple[int, int]:
+    match = re.fullmatch(r"(\d{1,2})\s*-\s*(\d{1,2})", str(raw or "10-21"))
+    start, end = (int(match.group(1)), int(match.group(2))) if match else (-1, -1)
+    if not (0 <= start < end <= 24):
+        raise ContentError("nurture_hours — например \"10-21\": с 10:00 до 21:00")
+    return start, end
+
+
+def _check_links(content: Content) -> None:
+    holders = [(f"Экран {s.id}", s) for s in content.screens.values()]
+    holders += [(f"Товар {p.id}, followup", p.followup) for p in content.products.values() if p.followup]
+    holders += [(f"Прогрев {st.id}", st.screen) for st in content.nurture]
+    for st in content.nurture:
+        for pid in st.skip_if_bought:
+            if pid not in content.products:
+                raise ContentError(f"Прогрев {st.id}: skip_if_bought — нет товара «{pid}»")
+    for where, screen in holders:
+        for row in screen.rows:
+            for b in row:
+                if b.kind == "screen" and b.target not in content.screens:
+                    raise ContentError(f"{where}, кнопка «{b.text}»: нет экрана «{b.target}»")
+                if b.kind == "product" and b.target not in content.products:
+                    raise ContentError(f"{where}, кнопка «{b.text}»: нет товара «{b.target}»")
+    clash = content.screens.keys() & content.products.keys()
+    if clash:
+        raise ContentError(f"Одинаковые id у экрана и товара: {', '.join(sorted(clash))}")
+
+
+def load_content(path: Path, methods: tuple[str, ...]) -> Content:
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError) as e:
+        raise ContentError(f"Не получилось прочитать {path.name}: {e}")
+
+    texts = {k: str(v).strip() for k, v in (data.get("texts") or {}).items()}
+    missing = REQUIRED_TEXTS - texts.keys()
+    if missing:
+        raise ContentError(f"В texts не хватает: {', '.join(sorted(missing))}")
+
+    products: dict[str, Product] = {}
+    for raw in data.get("products") or []:
+        product = _parse_product(raw, path.parent, methods)
+        if product.id in products:
+            raise ContentError(f"Повторяется id товара: {product.id}")
+        products[product.id] = product
+
+    screens: dict[str, Screen] = {}
+    for sid, raw in (data.get("screens") or {}).items():
+        sid = _slug(sid, "Экран")
+        screens[sid] = _parse_screen(sid, raw, path.parent)
+    if START_SCREEN not in screens:
+        raise ContentError("Нужен экран start — это главное меню")
+
+    content = Content(
+        texts=texts, screens=screens, products=products,
+        nurture=_parse_nurture(data.get("nurture"), path.parent),
+        nurture_hours=_parse_hours(data.get("nurture_hours")),
+    )
+    _check_links(content)
+    return content
+
+
+def fill(text: str, **values) -> str:
+    for name, value in values.items():
+        text = text.replace("{" + name + "}", str(value))
+    return text
+
+
+class ContentStore:
+    """Держит актуальный контент; /reload подменяет его без перезапуска бота."""
+
+    def __init__(self, path: Path, methods: tuple[str, ...]):
+        self.path = path
+        self.methods = methods
+        self.current = load_content(path, methods)
+
+    def reload(self) -> Content:
+        self.current = load_content(self.path, self.methods)
+        return self.current
+
+    def text(self, key: str, **values) -> str:
+        return fill(self.current.texts[key], **values)
+
+    def product(self, product_id: str) -> Product | None:
+        return self.current.products.get(product_id)
+
+    def product_by_tribute_id(self, tribute_id: int) -> Product | None:
+        return next((p for p in self.current.products.values() if p.tribute_product_id == tribute_id), None)
+
+    def screen(self, screen_id: str) -> Screen | None:
+        return self.current.screens.get(screen_id)
