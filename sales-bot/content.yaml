@@ -220,7 +220,7 @@ screens:
     text: |
       Пиши напрямую — отвечаю в течение дня.
     buttons:
-      - {text: "✉️ Написать мне", url: "https://t.me/your_username"}
+      - {text: "✉️ Написать мне", url: "https://t.me/yuliya_serduykova"}
       - {text: "⬅️ В меню", screen: start}
 
   # Пример партнёрской программы, как «Заработать со мной» у NIKSHEN.
@@ -233,7 +233,7 @@ screens:
   #     Условия целиком — по ссылке.
   #   buttons:
   #     - {text: "📄 Читать условия", url: "https://example.com/partners"}
-  #     - {text: "✉️ Написать и получить код", url: "https://t.me/your_username"}
+  #     - {text: "✉️ Написать и получить код", url: "https://t.me/yuliya_serduykova"}
   #     - {text: "⬅️ В меню", screen: start}
 
 
@@ -506,4 +506,4 @@ texts:
   # Команда /paysupport обязательна по правилам Telegram для оплаты звёздами
   paysupport: |
     <b>Вопросы по оплате</b>
-    Напиши мне @your_username и приложи скриншот оплаты — разберусь.
+    Напиши мне @yuliya_serduykova и приложи скриншот оплаты — разберусь.
