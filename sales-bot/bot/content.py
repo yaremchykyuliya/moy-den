@@ -50,10 +50,20 @@ class Screen:
 
 
 @dataclass(frozen=True)
+class NurtureStep:
+    id: str
+    delay_minutes: int
+    screen: Screen
+    skip_if_bought: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class Content:
     texts: dict[str, str]
     screens: dict[str, Screen]
     products: dict[str, Product]
+    nurture: tuple[NurtureStep, ...] = ()
+    nurture_hours: tuple[int, int] = (10, 21)
 
 
 class ContentError(Exception):
@@ -164,9 +174,47 @@ def _parse_screen(sid: str, raw: dict, base_dir: Path, where: str | None = None)
     )
 
 
+DELAY = re.compile(r"^(\d+)\s*([mhd])$")
+DELAY_UNITS = {"m": 1, "h": 60, "d": 1440}
+
+
+def _parse_nurture(raw_steps, base_dir: Path) -> tuple[NurtureStep, ...]:
+    steps, seen = [], set()
+    for raw in raw_steps or []:
+        sid = _slug(raw.get("id"), "Прогрев")
+        if sid in seen:
+            raise ContentError(f"Прогрев: повторяется id шага {sid}")
+        seen.add(sid)
+        match = DELAY.match(str(raw.get("after", "")).strip())
+        if not match:
+            raise ContentError(f"Прогрев {sid}: after — например 30m, 24h или 3d")
+        skip = raw.get("skip_if_bought") or []
+        skip = tuple(skip if isinstance(skip, list) else [skip])
+        steps.append(NurtureStep(
+            id=sid,
+            delay_minutes=int(match.group(1)) * DELAY_UNITS[match.group(2)],
+            screen=_parse_screen(START_SCREEN, raw, base_dir, where=f"Прогрев {sid}"),
+            skip_if_bought=tuple(str(x) for x in skip),
+        ))
+    return tuple(sorted(steps, key=lambda st: st.delay_minutes))
+
+
+def _parse_hours(raw) -> tuple[int, int]:
+    match = re.fullmatch(r"(\d{1,2})\s*-\s*(\d{1,2})", str(raw or "10-21"))
+    start, end = (int(match.group(1)), int(match.group(2))) if match else (-1, -1)
+    if not (0 <= start < end <= 24):
+        raise ContentError("nurture_hours — например \"10-21\": с 10:00 до 21:00")
+    return start, end
+
+
 def _check_links(content: Content) -> None:
     holders = [(f"Экран {s.id}", s) for s in content.screens.values()]
     holders += [(f"Товар {p.id}, followup", p.followup) for p in content.products.values() if p.followup]
+    holders += [(f"Прогрев {st.id}", st.screen) for st in content.nurture]
+    for st in content.nurture:
+        for pid in st.skip_if_bought:
+            if pid not in content.products:
+                raise ContentError(f"Прогрев {st.id}: skip_if_bought — нет товара «{pid}»")
     for where, screen in holders:
         for row in screen.rows:
             for b in row:
@@ -204,7 +252,11 @@ def load_content(path: Path, provider: str) -> Content:
     if START_SCREEN not in screens:
         raise ContentError("Нужен экран start — это главное меню")
 
-    content = Content(texts=texts, screens=screens, products=products)
+    content = Content(
+        texts=texts, screens=screens, products=products,
+        nurture=_parse_nurture(data.get("nurture"), path.parent),
+        nurture_hours=_parse_hours(data.get("nurture_hours")),
+    )
     _check_links(content)
     return content
 

@@ -11,6 +11,7 @@ from .config import load_config
 from .content import ContentError, ContentStore
 from .db import Database
 from .handlers import admin, payments, user
+from .nurture import run_forever as run_nurture
 from .sales import poll_yookassa
 from .yookassa import YooKassaClient
 
@@ -46,7 +47,9 @@ async def main() -> None:
     dp = build_dispatcher(config=config, store=store, db=db, yookassa=yookassa)
     await bot.set_my_commands(COMMANDS)
 
-    poller = asyncio.create_task(poll_yookassa(bot, db, store, config, yookassa)) if yookassa else None
+    tasks = [asyncio.create_task(run_nurture(bot, db, store, config.timezone))]
+    if yookassa:
+        tasks.append(asyncio.create_task(poll_yookassa(bot, db, store, config, yookassa)))
     logging.info(
         "Бот запущен. Оплата: %s. Экранов: %d, продуктов: %d", config.payment_provider,
         len(store.current.screens), len(store.current.products),
@@ -54,10 +57,10 @@ async def main() -> None:
     try:
         await dp.start_polling(bot)
     finally:
-        if poller:
-            poller.cancel()
+        for task in tasks:
+            task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
-                await poller
+                await task
         if yookassa:
             await yookassa.close()
         await db.close()

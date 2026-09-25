@@ -1,6 +1,7 @@
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dotenv import load_dotenv
 
@@ -19,6 +20,7 @@ class Config:
     yookassa_secret_key: str
     db_path: Path
     content_path: Path
+    timezone: ZoneInfo
 
 
 def _admin_ids(raw: str) -> frozenset[int]:
@@ -42,7 +44,14 @@ def load_config() -> Config:
     if provider == "yookassa" and not (shop_id and secret):
         raise SystemExit("Для ЮKassa заполни YOOKASSA_SHOP_ID и YOOKASSA_SECRET_KEY")
 
+    tz_name = os.getenv("TIMEZONE", "Europe/Moscow").strip()
+    try:
+        timezone = ZoneInfo(tz_name)
+    except ZoneInfoNotFoundError:
+        raise SystemExit(f"TIMEZONE: не знаю часовой пояс «{tz_name}». Пример: Europe/Moscow")
+
     return Config(
+        timezone=timezone,
         bot_token=token,
         admin_ids=_admin_ids(os.getenv("ADMIN_IDS", "")),
         payment_provider=provider,

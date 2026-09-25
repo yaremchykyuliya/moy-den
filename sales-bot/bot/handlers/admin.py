@@ -1,23 +1,50 @@
+import asyncio
 import html
+import logging
+from dataclasses import dataclass
 
-from aiogram import Bot, Router
+from aiogram import Bot, F, Router
+from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 from aiogram.filters import Command, CommandObject, Filter
-from aiogram.types import Message
+from aiogram.filters.callback_data import CallbackData
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from ..config import Config
 from ..content import ContentError, ContentStore
 from ..db import Database
+from ..keyboards import ProductCb, ScreenCb
 from ..sales import CURRENCY_LABEL
 
+log = logging.getLogger(__name__)
 router = Router(name="admin")
+
+SEGMENTS = {"all": "Всем", "no_purchase": "Кто не купил", "buyers": "Кто купил"}
+SEND_INTERVAL = 0.05  # ~20 сообщений в секунду — ниже лимита Telegram
 
 
 class IsAdmin(Filter):
-    async def __call__(self, message: Message, config: Config) -> bool:
-        return message.from_user is not None and message.from_user.id in config.admin_ids
+    async def __call__(self, event: Message | CallbackQuery, config: Config) -> bool:
+        return event.from_user is not None and event.from_user.id in config.admin_ids
 
 
 router.message.filter(IsAdmin())
+router.callback_query.filter(IsAdmin())
+
+
+class BroadcastCb(CallbackData, prefix="bc"):
+    segment: str
+
+
+@dataclass
+class Draft:
+    chat_id: int
+    message_id: int
+    markup: InlineKeyboardMarkup | None
+
+
+_drafts: dict[int, Draft] = {}
+_running: set[asyncio.Task] = set()
 
 
 @router.message(Command("admin"))
@@ -26,7 +53,12 @@ async def help_(message: Message):
         "<b>Команды администратора</b>\n\n"
         "/stats — пользователи, покупатели, выручка\n"
         "/reload — перечитать content.yaml без перезапуска\n"
-        "/refund &lt;номер заказа&gt; — вернуть звёзды (только для Stars)"
+        "/refund &lt;номер заказа&gt; — вернуть звёзды (только для Stars)\n\n"
+        "<b>Рассылка</b>\n"
+        "1. Напиши боту сообщение: текст, фото, видео — как обычно.\n"
+        "2. Ответь на него командой /broadcast.\n"
+        "   /broadcast guide — добавит кнопку на продукт или экран с этим id.\n"
+        "3. Проверь превью и выбери, кому отправить."
     )
 
 
@@ -35,7 +67,7 @@ async def stats(message: Message, db: Database, store: ContentStore):
     s = await db.stats()
     lines = [
         "<b>Статистика</b>\n",
-        f"Запустили бота: <b>{s['users']}</b>",
+        f"Запустили бота: <b>{s['users']}</b> (заблокировали: {s['blocked']})",
         f"Купили хотя бы раз: <b>{s['buyers']}</b>",
     ]
     if s["by_product"]:
@@ -51,6 +83,10 @@ async def stats(message: Message, db: Database, store: ContentStore):
             product = store.product(row["product_id"])
             title = html.escape(product.title) if product else row["product_id"]
             lines.append(f"• {title}: {row['people']} чел.")
+    if s["nurture"]:
+        lines.append("\n<b>Прогрев отправлен</b>")
+        for row in s["nurture"]:
+            lines.append(f"• {html.escape(row['step_id'])}: {row['people']} чел.")
     await message.answer("\n".join(lines))
 
 
@@ -78,3 +114,92 @@ async def refund(message: Message, command: CommandObject, bot: Bot, db: Databas
     )
     await db.set_status(order.id, "refunded")
     await message.answer(f"↩️ Звёзды по заказу №{order.id} возвращены.")
+
+
+def _target_button(target: str, store: ContentStore) -> InlineKeyboardMarkup | None:
+    product = store.product(target)
+    if product:
+        data = ProductCb(id=product.id, back="start").pack()
+        return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=product.title, callback_data=data)]])
+    if store.screen(target):
+        data = ScreenCb(id=target).pack()
+        return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Открыть", callback_data=data)]])
+    return None
+
+
+@router.message(Command("broadcast"))
+async def broadcast(message: Message, command: CommandObject, bot: Bot, db: Database, store: ContentStore):
+    source = message.reply_to_message
+    if source is None:
+        await message.answer("Сначала напиши сообщение для рассылки, потом ответь на него командой /broadcast.")
+        return
+    if _running:
+        await message.answer("Предыдущая рассылка ещё идёт — дождись отчёта.")
+        return
+
+    target = (command.args or "").strip()
+    markup = _target_button(target, store) if target else None
+    if target and markup is None:
+        await message.answer(f"Не нашёл продукт или экран с id «{html.escape(target)}».")
+        return
+
+    _drafts[message.from_user.id] = Draft(message.chat.id, source.message_id, markup)
+    await message.answer("<b>Превью</b> — так увидят сообщение:")
+    await bot.copy_message(message.chat.id, message.chat.id, source.message_id, reply_markup=markup)
+
+    kb = InlineKeyboardBuilder()
+    for segment, label in SEGMENTS.items():
+        count = len(await db.audience(segment))
+        kb.button(text=f"{label} · {count}", callback_data=BroadcastCb(segment=segment))
+    kb.button(text="Отмена", callback_data=BroadcastCb(segment="cancel"))
+    kb.adjust(1)
+    await message.answer("Кому отправить?", reply_markup=kb.as_markup())
+
+
+@router.callback_query(BroadcastCb.filter(F.segment == "cancel"))
+async def broadcast_cancel(callback: CallbackQuery):
+    _drafts.pop(callback.from_user.id, None)
+    await callback.answer()
+    await callback.message.edit_text("Рассылка отменена.")
+
+
+@router.callback_query(BroadcastCb.filter())
+async def broadcast_start(callback: CallbackQuery, callback_data: BroadcastCb, bot: Bot, db: Database):
+    draft = _drafts.pop(callback.from_user.id, None)
+    if draft is None or _running:
+        await callback.answer("Черновик не найден — начни заново с /broadcast", show_alert=True)
+        return
+    users = await db.audience(callback_data.segment)
+    await callback.answer()
+    await callback.message.edit_text(f"Отправляю: {SEGMENTS[callback_data.segment].lower()}, {len(users)} чел. Пришлю отчёт.")
+    task = asyncio.create_task(_send_all(bot, db, draft, users, callback.from_user.id))
+    _running.add(task)
+    task.add_done_callback(_running.discard)
+
+
+async def _send_all(bot: Bot, db: Database, draft: Draft, users: list[int], admin_id: int) -> None:
+    sent = blocked = failed = 0
+    for user_id in users:
+        for attempt in range(2):
+            try:
+                await bot.copy_message(user_id, draft.chat_id, draft.message_id, reply_markup=draft.markup)
+                sent += 1
+                break
+            except TelegramRetryAfter as e:
+                await asyncio.sleep(e.retry_after)
+            except TelegramForbiddenError:
+                await db.mark_blocked(user_id)
+                blocked += 1
+                break
+            except Exception:
+                log.exception("Рассылка: не отправилось пользователю %s", user_id)
+                failed += 1
+                break
+        else:
+            failed += 1
+        await asyncio.sleep(SEND_INTERVAL)
+    await bot.send_message(
+        admin_id,
+        f"✅ Рассылка завершена\n\nДоставлено: <b>{sent}</b>\n"
+        f"Заблокировали бота: {blocked}\nОшибок: {failed}",
+    )
