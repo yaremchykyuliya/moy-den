@@ -59,6 +59,24 @@ PALETTES = {
         "muted": "#A89A84", "shadow": "rgba(62,50,38,.07)", "warn-bg": "#F2E3D3", "warn-edge": "#B7825A",
         "warn-ink": "#855A38", "bad-bg": "#EDE6DA", "bad-ink": "#6F6557", "next-label": "#D9C39A", "next-em": "#EBDDBF",
     },
+    "latte": {  # Латте — ваниль, миндальное молоко, карамель, эспрессо
+        "paper": "#F6EFE4", "card": "#FFFBF5", "ink": "#3A2A21", "ink-soft": "#8C7766",
+        "green": "#A06A45", "green-deep": "#4B3327", "green-mist": "#ECDFCF", "line": "#E9DDCD",
+        "muted": "#AD9A88", "shadow": "rgba(75,51,39,.07)", "warn-bg": "#F3E2DF", "warn-edge": "#C9908C",
+        "warn-ink": "#8E5A57", "bad-bg": "#EFE6DA", "bad-ink": "#6F6155", "next-label": "#E2C9AE", "next-em": "#F0DFCB",
+    },
+    "arctic": {  # Арктика — полярный белый, ледяной голубой, королевский сапфир
+        "paper": "#EEF2F7", "card": "#F9FBFD", "ink": "#1B2433", "ink-soft": "#69788C",
+        "green": "#2F4E8E", "green-deep": "#1D2F57", "green-mist": "#DBE5F1", "line": "#DAE2EC",
+        "muted": "#91A0B2", "shadow": "rgba(29,47,87,.07)", "warn-bg": "#E3EEF0", "warn-edge": "#6FA3AA",
+        "warn-ink": "#3E6E75", "bad-bg": "#E5EAF0", "bad-ink": "#5A6779", "next-label": "#B4C6E4", "next-em": "#D3E0F2",
+    },
+    "chrome": {  # Хром — алебастр, бледная сирень, мальва, полночный кобальт
+        "paper": "#F4EFF1", "card": "#FBF9FA", "ink": "#222941", "ink-soft": "#7A768C",
+        "green": "#6A63A8", "green-deep": "#2A3263", "green-mist": "#E7E2F1", "line": "#E5DFE8",
+        "muted": "#A49FB2", "shadow": "rgba(42,50,99,.07)", "warn-bg": "#F2E4EA", "warn-edge": "#B98AA0",
+        "warn-ink": "#865A70", "bad-bg": "#ECE7EE", "bad-ink": "#625E73", "next-label": "#C9C3E6", "next-em": "#E2DDF2",
+    },
     "mountains": {  # Горы — туман и глубокий сланец
         "paper": "#EEF1F2", "card": "#FAFBFB", "ink": "#25303A", "ink-soft": "#6F7C87",
         "green": "#3F6275", "green-deep": "#243C4A", "green-mist": "#DCE5EA", "line": "#DDE3E7",
