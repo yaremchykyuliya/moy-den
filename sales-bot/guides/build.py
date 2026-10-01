@@ -41,7 +41,7 @@ BOT = os.environ.get("GUIDE_BOT", "usefulclaudebot")
 
 # Палитра выбирается в шапке гайда: palette: olive | peony | sand | mountains
 PALETTES = {
-    "olive": {  # Олива — как в Mini App «Мой день»
+    "olive": {  # Олива — основная палитра бота и гайдов
         "paper": "#F6F1E7", "card": "#FFFCF5", "ink": "#38332B", "ink-soft": "#8B8375",
         "green": "#5A6E4C", "green-deep": "#3F4F35", "green-mist": "#E4E8DC", "line": "#E7E0D2",
         "muted": "#A79F90", "shadow": "rgba(88,76,52,.06)", "warn-bg": "#F1E6D6", "warn-edge": "#B98B5E",
