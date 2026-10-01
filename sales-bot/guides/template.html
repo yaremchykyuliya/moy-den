@@ -26,19 +26,20 @@ body{margin:0;font-variant-numeric:lining-nums;background:var(--paper);color:var
 /* ── Обложка ─────────────────────────────── */
 .cover{page:cover;height:210mm;padding:18mm 14mm 16mm;display:flex;flex-direction:column;
   background:var(--paper);position:relative;overflow:hidden;break-after:page}
-.cover::before{content:"";position:absolute;right:-38mm;top:-30mm;width:112mm;height:112mm;
-  border-radius:50%;background:var(--green-mist)}
-.cover::after{content:"";position:absolute;right:14mm;top:62mm;width:15mm;height:15mm;
-  border-radius:50%;background:var(--green)}
+/* «Журнал»: двойная тонкая рамка, всё по центру — как на баннерах бота */
+.cover::before{content:"";position:absolute;inset:7mm;border:.45mm solid var(--green);opacity:.55}
+.cover::after{content:"";position:absolute;inset:9mm;border:.3mm solid var(--green);opacity:.25}
+.cover{text-align:center;align-items:center}
+.cover .kicker::after{content:"";display:block;width:16mm;height:.4mm;background:var(--green);margin:3mm auto 0}
 .kicker{position:relative;font:700 7pt var(--sans);letter-spacing:.2em;text-transform:uppercase;color:var(--green)}
 .num{position:relative;font-variant-numeric:lining-nums;font:500 64pt/1 var(--serif);color:var(--green-deep);margin:8mm 0 0}
 .cover h1{position:relative;font:600 29pt/1.06 var(--serif);margin:auto 0 5mm;color:var(--ink);
   letter-spacing:-.005em;hyphens:none}
-.promise{font:italic 500 14.5pt/1.3 var(--serif);color:var(--green-deep);margin:0 0 9mm;max-width:108mm}
-.chips{display:flex;flex-direction:column;gap:2.4mm;margin-bottom:10mm}
+.promise{font:italic 500 14.5pt/1.3 var(--serif);color:var(--green-deep);margin:0 auto 9mm;max-width:108mm;position:relative}
+.chips{display:flex;flex-direction:column;gap:2.4mm;margin-bottom:10mm;align-items:center;position:relative}
 .chip{display:flex;gap:3mm;align-items:baseline;font-size:8.6pt;line-height:1.45}
-.chip b{flex:none;width:17mm;font:700 6.6pt var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--green)}
-.cover-foot{border-top:1px solid var(--line);padding-top:3.5mm;font-size:7.2pt;color:var(--ink-soft);line-height:1.5}
+.chip b{flex:none;width:auto;font:700 6.6pt var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--green)}
+.cover-foot{position:relative;border-top:1px solid var(--line);padding-top:3.5mm;max-width:100mm;font-size:7.2pt;color:var(--ink-soft);line-height:1.5}
 
 /* ── Текст ───────────────────────────────── */
 h2{font:600 17pt/1.15 var(--serif);color:var(--green-deep);margin:7mm 0 2.5mm;break-after:avoid;hyphens:none}
