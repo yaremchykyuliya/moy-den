@@ -1,12 +1,12 @@
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
 
 DELIVERY_TYPES = {"file", "link", "text", "channel"}
-BUTTON_KINDS = ("screen", "product", "url", "my")
+BUTTON_KINDS = ("screen", "product", "flow", "url", "my")
 REQUIRED_TEXTS = {
     "my_empty", "my_purchases", "paysupport", "pay_prompt", "pay_waiting",
     "pay_canceled", "thanks", "already_bought", "delivery_error",
@@ -18,6 +18,8 @@ RUB_METHODS = {"tribute", "transfer", "yookassa"}
 TRIBUTE_URL = re.compile(r"^https://(web\.tribute\.tg|t\.me)/\S+$")
 SLUG = re.compile(r"^[a-z0-9_-]{1,28}$")
 START_SCREEN = "start"
+CAPTION_LIMIT = 1024  # столько символов Telegram разрешает в подписи к картинке
+FLOW_PLACEHOLDER = re.compile(r"\{(\d)\}")
 
 
 @dataclass(frozen=True)
@@ -65,6 +67,31 @@ class Screen:
 
 
 @dataclass(frozen=True)
+class FlowOption:
+    text: str   # надпись на кнопке
+    value: str  # что подставится в запрос
+
+
+@dataclass(frozen=True)
+class FlowStep:
+    text: str
+    options: tuple[FlowOption, ...]
+
+
+@dataclass(frozen=True)
+class Flow:
+    """Сценарий: пара вопросов кнопками → готовый запрос под человека → продукт."""
+    id: str
+    steps: tuple[FlowStep, ...]
+    result_text: str
+    prompt: str
+    after: Screen
+
+    def build_prompt(self, values: list[str]) -> str:
+        return FLOW_PLACEHOLDER.sub(lambda m: values[int(m.group(1)) - 1], self.prompt)
+
+
+@dataclass(frozen=True)
 class NurtureStep:
     id: str
     delay_minutes: int
@@ -79,6 +106,7 @@ class Content:
     products: dict[str, Product]
     nurture: tuple[NurtureStep, ...] = ()
     nurture_hours: tuple[int, int] = (10, 21)
+    flows: "dict[str, Flow]" = field(default_factory=dict)
 
 
 class ContentError(Exception):
@@ -169,6 +197,11 @@ def _parse_product(raw: dict, base_dir: Path, methods: tuple[str, ...]) -> Produ
             raise ContentError(f"{where}: followup бывает только у бесплатных продуктов")
         followup = _parse_screen(START_SCREEN, raw["followup"], base_dir, where=f"{where}, followup")
 
+    description = str(raw.get("description") or "").strip()
+    if raw.get("photo") and len(description) > CAPTION_LIMIT - 120:
+        raise ContentError(f"{where}: с картинкой описание должно быть короче {CAPTION_LIMIT - 120} символов "
+                           f"(сейчас {len(description)}) — так ограничивает Telegram")
+
     return Product(
         followup=followup,
         tribute_url=str(raw.get("tribute_url") or "").strip(),
@@ -177,7 +210,7 @@ def _parse_product(raw: dict, base_dir: Path, methods: tuple[str, ...]) -> Produ
         templates=templates,
         id=pid,
         title=str(raw["title"]).strip(),
-        description=str(raw.get("description") or "").strip(),
+        description=description,
         free=free,
         price_rub=raw.get("price_rub") or 0,
         price_stars=raw.get("price_stars") or 0,
@@ -212,12 +245,51 @@ def _parse_screen(sid: str, raw: dict, base_dir: Path, where: str | None = None)
         if not 1 <= len(row) <= 8:
             raise ContentError(f"{where}: в одном ряду от 1 до 8 кнопок")
         rows.append(tuple(_parse_button(b, where) for b in row))
+    text = str(raw["text"]).strip()
+    if raw.get("photo") and len(text) > CAPTION_LIMIT:
+        raise ContentError(f"{where}: с картинкой текст должен быть не длиннее {CAPTION_LIMIT} символов "
+                           f"(сейчас {len(text)}) — так ограничивает Telegram")
     return Screen(
         id=sid,
-        text=str(raw["text"]).strip(),
+        text=text,
         photo=_image(raw.get("photo"), base_dir, where),
         rows=tuple(rows),
     )
+
+
+def _parse_flow(fid: str, raw: dict, base_dir: Path) -> Flow:
+    where = f"Сценарий {fid}"
+    if not isinstance(raw, dict):
+        raise ContentError(f"{where}: ожидаются steps и result")
+    raw_steps = raw.get("steps") or []
+    if not 1 <= len(raw_steps) <= 4:
+        raise ContentError(f"{where}: от 1 до 4 вопросов в steps")
+    steps = []
+    for i, st in enumerate(raw_steps, 1):
+        options = (st or {}).get("options") or []
+        if not (st or {}).get("text") or not 2 <= len(options) <= 8:
+            raise ContentError(f"{where}, вопрос {i}: нужен text и от 2 до 8 вариантов в options")
+        parsed = []
+        for o in options:
+            if isinstance(o, dict):
+                label, value = str(o.get("text") or "").strip(), str(o.get("value") or "").strip()
+            else:
+                label = value = str(o).strip()
+            if not label or not value:
+                raise ContentError(f"{where}, вопрос {i}: у варианта должен быть text (и value, если указан словарём)")
+            parsed.append(FlowOption(label, value))
+        steps.append(FlowStep(str(st["text"]).strip(), tuple(parsed)))
+
+    result = raw.get("result") or {}
+    prompt = str(result.get("prompt") or "").strip()
+    if not result.get("text") or not prompt or not result.get("after"):
+        raise ContentError(f"{where}: в result нужны text, prompt и after")
+    for m in FLOW_PLACEHOLDER.finditer(prompt):
+        if not 1 <= int(m.group(1)) <= len(steps):
+            raise ContentError(f"{where}: в prompt есть {{{m.group(1)}}}, а вопросов только {len(steps)}")
+    after = _parse_screen(START_SCREEN, {"text": result["after"], "buttons": result.get("buttons")},
+                          base_dir, where=f"{where}, result")
+    return Flow(fid, tuple(steps), str(result["text"]).strip(), prompt, after)
 
 
 DELAY = re.compile(r"^(\d+)\s*([mhd])$")
@@ -257,6 +329,7 @@ def _check_links(content: Content) -> None:
     holders = [(f"Экран {s.id}", s) for s in content.screens.values()]
     holders += [(f"Товар {p.id}, followup", p.followup) for p in content.products.values() if p.followup]
     holders += [(f"Прогрев {st.id}", st.screen) for st in content.nurture]
+    holders += [(f"Сценарий {f.id}, result", f.after) for f in content.flows.values()]
     for st in content.nurture:
         for pid in st.skip_if_bought:
             if pid not in content.products:
@@ -268,6 +341,8 @@ def _check_links(content: Content) -> None:
                     raise ContentError(f"{where}, кнопка «{b.text}»: нет экрана «{b.target}»")
                 if b.kind == "product" and b.target not in content.products:
                     raise ContentError(f"{where}, кнопка «{b.text}»: нет товара «{b.target}»")
+                if b.kind == "flow" and b.target not in content.flows:
+                    raise ContentError(f"{where}, кнопка «{b.text}»: нет сценария «{b.target}»")
     clash = content.screens.keys() & content.products.keys()
     if clash:
         raise ContentError(f"Одинаковые id у экрана и товара: {', '.join(sorted(clash))}")
@@ -298,8 +373,13 @@ def load_content(path: Path, methods: tuple[str, ...]) -> Content:
     if START_SCREEN not in screens:
         raise ContentError("Нужен экран start — это главное меню")
 
+    flows = {}
+    for fid, raw in (data.get("flows") or {}).items():
+        fid = _slug(fid, "Сценарий")
+        flows[fid] = _parse_flow(fid, raw, path.parent)
+
     content = Content(
-        texts=texts, screens=screens, products=products,
+        texts=texts, screens=screens, products=products, flows=flows,
         nurture=_parse_nurture(data.get("nurture"), path.parent),
         nurture_hours=_parse_hours(data.get("nurture_hours")),
     )
@@ -344,6 +424,9 @@ class ContentStore:
 
     def product_by_tribute_id(self, tribute_id: int) -> Product | None:
         return next((p for p in self.current.products.values() if p.tribute_product_id == tribute_id), None)
+
+    def flow(self, flow_id: str) -> Flow | None:
+        return self.current.flows.get(flow_id)
 
     def screen(self, screen_id: str) -> Screen | None:
         return self.current.screens.get(screen_id)

@@ -105,6 +105,36 @@ async def _send_template(message: Message, product: Product, num: int, item: dic
     )
 
 
+@router.callback_query(kb.FlowCb.filter())
+async def flow(callback: CallbackQuery, callback_data: kb.FlowCb, store: ContentStore):
+    item = store.flow(callback_data.id)
+    picks = callback_data.picks
+    valid = picks.startswith("s") and (picks == "s" or picks[1:].isdigit())
+    if item is None or not valid:
+        await callback.answer("Этого сценария уже нет", show_alert=True)
+        return
+    try:
+        chosen = [item.steps[i].options[int(d)] for i, d in enumerate(picks[1:])]
+    except IndexError:
+        await callback.answer("Этот вариант устарел — начни заново", show_alert=True)
+        return
+    await callback.answer()
+    if len(chosen) < len(item.steps):
+        step = item.steps[len(chosen)]
+        await _show(callback, step.text, kb.flow_step(item, picks))
+        return
+
+    prompt = item.build_prompt([o.value for o in chosen])
+    rows = []
+    if len(prompt) <= COPY_BUTTON_LIMIT:
+        rows.append([InlineKeyboardButton(text="📋 Скопировать", copy_text=CopyTextButton(text=prompt))])
+    # Запрос остаётся в чате отдельным сообщением, а меню под ним можно листать дальше
+    await _show(callback, f"{item.result_text}\n\n<pre>{html.escape(prompt)}</pre>",
+                InlineKeyboardMarkup(inline_keyboard=rows) if rows else None)
+    await callback.message.answer(fill(item.after.text, name=_name(callback.from_user)),
+                                  reply_markup=kb.screen(item.after))
+
+
 @router.message(Command("menu"))
 async def menu(message: Message, store: ContentStore):
     await _open_screen(message, START_SCREEN, store)
