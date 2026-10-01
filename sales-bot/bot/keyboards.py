@@ -2,7 +2,7 @@ from aiogram.filters.callback_data import CallbackData
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from .content import START_SCREEN, Product, Screen
+from .content import START_SCREEN, Flow, Product, Screen
 
 
 class ScreenCb(CallbackData, prefix="s"):
@@ -16,6 +16,11 @@ class MyCb(CallbackData, prefix="my"):
 class ProductCb(CallbackData, prefix="p"):
     id: str
     back: str
+
+
+class FlowCb(CallbackData, prefix="f"):
+    id: str
+    picks: str  # «s» + номера выбранных вариантов: s, s2, s21…
 
 
 class BuyCb(CallbackData, prefix="b"):
@@ -59,6 +64,8 @@ def _button(text: str, kind: str, target: str, screen_id: str) -> InlineKeyboard
         data = ScreenCb(id=target)
     elif kind == "product":
         data = ProductCb(id=target, back=screen_id)
+    elif kind == "flow":
+        data = FlowCb(id=target, picks="s")
     else:
         data = MyCb()
     return InlineKeyboardButton(text=text, callback_data=data.pack())
@@ -67,6 +74,21 @@ def _button(text: str, kind: str, target: str, screen_id: str) -> InlineKeyboard
 def screen(s: Screen) -> InlineKeyboardMarkup | None:
     rows = [[_button(b.text, b.kind, b.target, s.id) for b in row] for row in s.rows]
     return InlineKeyboardMarkup(inline_keyboard=rows) if rows else None
+
+
+def flow_step(flow: Flow, picks: str) -> InlineKeyboardMarkup:
+    step = flow.steps[len(picks) - 1]
+    kb = InlineKeyboardBuilder()
+    for i, option in enumerate(step.options):
+        kb.button(text=option.text, callback_data=FlowCb(id=flow.id, picks=picks + str(i)))
+    if len(picks) > 1:
+        kb.button(text="⬅️ Назад", callback_data=FlowCb(id=flow.id, picks=picks[:-1]))
+    else:
+        kb.button(text="⬅️ В меню", callback_data=ScreenCb(id=START_SCREEN))
+    long_labels = any(len(o.text) > 16 for o in step.options)
+    kb.adjust(*([1] * len(step.options) if long_labels else [2] * (len(step.options) // 2)
+                + [1] * (len(step.options) % 2)), 1)
+    return kb.as_markup()
 
 
 def back(screen_id: str = START_SCREEN, text: str = "⬅️ В меню") -> InlineKeyboardMarkup:
