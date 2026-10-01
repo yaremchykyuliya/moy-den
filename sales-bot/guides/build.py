@@ -39,7 +39,8 @@ BOX_LABELS = {
 
 BOT = os.environ.get("GUIDE_BOT", "usefulclaudebot")
 
-# Палитра выбирается в шапке гайда: palette: olive | peony | sand | mountains
+# Палитра выбирается в шапке гайда: palette: chrome | latte | arctic | olive | peony | sand | mountains
+# Без поля palette — «Хром», основная палитра бота
 PALETTES = {
     "olive": {  # Олива — основная палитра бота и гайдов
         "paper": "#F6F1E7", "card": "#FFFCF5", "ink": "#38332B", "ink-soft": "#8B8375",
@@ -167,7 +168,7 @@ def build_html(path: Path) -> tuple[str, dict]:
     if copy_prefix:
         meta["_templates"] = {"prefix": copy_prefix, "items": collected}
     values = {
-        "palette": palette_css(meta.get("palette", "olive")),
+        "palette": palette_css(meta.get("palette", "chrome")),
         "bot": BOT,
         "kicker": html.escape(meta.get("kicker", "Бесплатный гайд")),
         "badge": html.escape(str(meta.get("badge", number))),

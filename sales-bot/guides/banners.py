@@ -1,7 +1,7 @@
-"""Баннеры для экранов бота — в стиле PDF-гайдов (палитра «Олива»).
+"""Баннеры для экранов бота — дизайн «Журнал»: двойная рамка, заголовок по центру.
 
 Запуск: python guides/banners.py  →  products/banners/*.png
-         python guides/banners.py peony  →  те же баннеры в другой палитре
+         python guides/banners.py latte  →  те же баннеры в другой палитре
 Текст баннеров — в BANNERS ниже. Слово в *звёздочках* выйдет курсивом.
 Там же собирается аватарка бота (avatar.png) — её загружают в @BotFather.
 """
@@ -18,7 +18,7 @@ from build import PALETTES, find_chrome  # noqa: E402
 
 OUT = HERE.parent / "products" / "banners"
 W, H = 1280, 720
-PALETTE = "olive"
+PALETTE = "chrome"
 
 BANNERS = {
     "start": ("Красивая жизнь считается", "Нейросеть, *которая тебя знает*", "поездки · покупки · деньги · сообщения"),
@@ -34,28 +34,32 @@ PAGE = """<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><style>
 *{{box-sizing:border-box;margin:0}}
 html,body{{width:{w}px;height:{h}px;overflow:hidden}}
 body{{background:var(--paper);position:relative;font-family:'Manrope',sans-serif;color:var(--ink)}}
-.mist{{position:absolute;right:-170px;top:-230px;width:720px;height:720px;border-radius:50%;background:var(--green-mist)}}
-.dot{{position:absolute;right:150px;top:150px;width:92px;height:92px;border-radius:50%;background:var(--green)}}
-.ring{{position:absolute;right:96px;top:96px;width:200px;height:200px;border-radius:50%;border:1.5px solid var(--green);opacity:.35}}
-.k{{position:absolute;left:96px;top:92px;font:700 22px 'Manrope',sans-serif;letter-spacing:.24em;text-transform:uppercase;color:var(--green)}}
-h1{{position:absolute;left:92px;bottom:150px;width:900px;font:600 92px/1.0 'Cormorant Garamond',Georgia,serif;color:var(--ink);letter-spacing:-.005em}}
+.frame{{position:absolute;inset:34px;border:1.5px solid var(--green);opacity:.55}}
+.frame2{{position:absolute;inset:44px;border:1px solid var(--green);opacity:.25}}
+.top,.bot{{position:absolute;left:0;right:0;text-align:center}}
+.top{{top:84px;font:700 19px 'Manrope',sans-serif;letter-spacing:.34em;text-transform:uppercase;color:var(--green)}}
+.bot{{bottom:84px;font:500 24px 'Manrope',sans-serif;letter-spacing:.12em;color:var(--ink-soft)}}
+.rule{{position:absolute;left:50%;width:90px;margin-left:-45px;height:1.5px;background:var(--green)}}
+h1{{position:absolute;left:200px;right:200px;top:50%;transform:translateY(-54%);text-align:center;
+   font:600 104px/1.0 'Cormorant Garamond',Georgia,serif;color:var(--ink);letter-spacing:-.01em;
+   font-variant-numeric:lining-nums}}
 h1 i{{font-style:italic;font-weight:500;color:var(--green-deep)}}
-.s{{position:absolute;left:96px;bottom:84px;font:500 26px 'Manrope',sans-serif;color:var(--ink-soft);letter-spacing:.02em}}
-.line{{position:absolute;left:96px;right:96px;bottom:136px;height:0}}
 </style></head><body>
-<div class="mist"></div><div class="ring"></div><div class="dot"></div>
-<div class="k">{kicker}</div><h1>{title}</h1><div class="s">{sub}</div>
+<div class="frame"></div><div class="frame2"></div>
+<div class="top">{kicker}</div><div class="rule" style="top:124px"></div>
+<h1>{title}</h1>
+<div class="rule" style="bottom:132px"></div><div class="bot">{sub}</div>
 </body></html>"""
 
 
 AVATAR = """<!DOCTYPE html><html><head><meta charset="utf-8"><style>
 {fonts}
 :root{{{palette}}}
-html,body{{margin:0;width:640px;height:640px;overflow:hidden;background:var(--green-deep)}}
-.c{{position:absolute;left:-120px;bottom:-160px;width:560px;height:560px;border-radius:50%;background:var(--green)}}
-.d{{position:absolute;right:118px;top:118px;width:74px;height:74px;border-radius:50%;background:var(--paper)}}
-.l{{position:absolute;left:0;right:0;top:150px;text-align:center;font:italic 500 330px/1 'Cormorant Garamond',Georgia,serif;color:var(--paper)}}
-</style></head><body><div class="c"></div><div class="d"></div><div class="l">{letter}</div></body></html>"""
+html,body{{margin:0;width:640px;height:640px;overflow:hidden;background:var(--paper)}}
+.r1,.r2{{position:absolute;border-radius:50%;border:solid var(--green)}}
+.r1{{inset:46px;border-width:3px;opacity:.55}}.r2{{inset:64px;border-width:2px;opacity:.25}}
+.l{{position:absolute;left:0;right:0;top:146px;text-align:center;font:italic 500 330px/1 'Cormorant Garamond',Georgia,serif;color:var(--green-deep)}}
+</style></head><body><div class="r1"></div><div class="r2"></div><div class="l">{letter}</div></body></html>"""
 
 
 HEADLESS_SHELL = "/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell"
