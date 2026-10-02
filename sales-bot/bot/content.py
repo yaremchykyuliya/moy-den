@@ -6,13 +6,14 @@ from pathlib import Path
 import yaml
 
 DELIVERY_TYPES = {"file", "link", "text", "channel"}
-BUTTON_KINDS = ("screen", "product", "flow", "url", "my")
+BUTTON_KINDS = ("screen", "product", "flow", "url", "copy", "my")
+COPY_LIMIT = 256  # столько символов Telegram разрешает в кнопке «Копировать»
 REQUIRED_TEXTS = {
     "my_empty", "my_purchases", "paysupport", "pay_prompt", "pay_waiting",
     "pay_canceled", "thanks", "already_bought", "delivery_error",
     "pay_choose", "tribute_prompt", "transfer_prompt", "transfer_received",
     "transfer_rejected", "transfer_no_order", "seller_receipt",
-    "template_hint", "template_locked",
+    "template_hint", "template_locked", "lesson_locked",
 }
 RUB_METHODS = {"tribute", "transfer", "yookassa"}
 TRIBUTE_URL = re.compile(r"^https://(web\.tribute\.tg|t\.me)/\S+$")
@@ -64,6 +65,7 @@ class Screen:
     text: str
     photo: str | None
     rows: tuple[tuple[Button, ...], ...]
+    requires: str | None = None  # id продукта: без покупки экран не откроется
 
 
 @dataclass(frozen=True)
@@ -230,6 +232,9 @@ def _parse_button(raw, where: str) -> Button:
         )
     kind = kinds[0]
     target = str(raw[kind]).strip() if kind != "my" else ""
+    if kind == "copy" and not 1 <= len(target) <= COPY_LIMIT:
+        raise ContentError(f"{where}, кнопка «{raw['text']}»: текст для копирования — до {COPY_LIMIT} символов "
+                           f"(сейчас {len(target)}) — так ограничивает Telegram")
     if kind == "url" and not target.startswith(("https://", "http://", "tg://")):
         raise ContentError(f"{where}, кнопка «{raw['text']}»: url должен начинаться с https://")
     return Button(text=str(raw["text"]).strip(), kind=kind, target=target)
@@ -254,6 +259,7 @@ def _parse_screen(sid: str, raw: dict, base_dir: Path, where: str | None = None)
         text=text,
         photo=_image(raw.get("photo"), base_dir, where),
         rows=tuple(rows),
+        requires=str(raw["requires"]).strip() if raw.get("requires") else None,
     )
 
 
@@ -343,6 +349,9 @@ def _check_links(content: Content) -> None:
                     raise ContentError(f"{where}, кнопка «{b.text}»: нет товара «{b.target}»")
                 if b.kind == "flow" and b.target not in content.flows:
                     raise ContentError(f"{where}, кнопка «{b.text}»: нет сценария «{b.target}»")
+    for s in content.screens.values():
+        if s.requires and s.requires not in content.products:
+            raise ContentError(f"Экран {s.id}: requires — нет товара «{s.requires}»")
     clash = content.screens.keys() & content.products.keys()
     if clash:
         raise ContentError(f"Одинаковые id у экрана и товара: {', '.join(sorted(clash))}")
