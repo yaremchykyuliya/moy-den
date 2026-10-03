@@ -39,8 +39,17 @@ def _name(user: User) -> str:
     return html.escape(user.first_name or "")
 
 
-async def _open_screen(target, screen_id: str, store: ContentStore) -> None:
+async def _open_screen(target, screen_id: str, store: ContentStore, db: Database, bot: Bot) -> None:
     screen = store.screen(screen_id) or store.screen(START_SCREEN)
+    if screen.requires and not await db.has_paid(target.from_user.id, screen.requires):
+        # Платный урок: вместо него — карточка продукта с покупкой
+        product = store.product(screen.requires)
+        if isinstance(target, CallbackQuery):
+            await target.message.answer(store.text("lesson_locked"))
+        else:
+            await target.answer(store.text("lesson_locked"))
+        await _open_product(target, product, START_SCREEN, bot, store, db)
+        return
     text = fill(screen.text, name=_name(target.from_user))
     await _show(target, text, kb.screen(screen), photo=screen.photo)
 
@@ -81,7 +90,7 @@ async def start(message: Message, command: CommandObject, bot: Bot,
     if found:
         await _send_template(message, *found, bot=bot, store=store, db=db)
         return
-    await _open_screen(message, arg if store.screen(arg) else START_SCREEN, store)
+    await _open_screen(message, arg if store.screen(arg) else START_SCREEN, store, db, bot)
 
 
 COPY_BUTTON_LIMIT = 256  # столько символов Telegram разрешает в кнопке «Копировать»
@@ -136,14 +145,15 @@ async def flow(callback: CallbackQuery, callback_data: kb.FlowCb, store: Content
 
 
 @router.message(Command("menu"))
-async def menu(message: Message, store: ContentStore):
-    await _open_screen(message, START_SCREEN, store)
+async def menu(message: Message, bot: Bot, store: ContentStore, db: Database):
+    await _open_screen(message, START_SCREEN, store, db, bot)
 
 
 @router.callback_query(kb.ScreenCb.filter())
-async def screen(callback: CallbackQuery, callback_data: kb.ScreenCb, store: ContentStore):
+async def screen(callback: CallbackQuery, callback_data: kb.ScreenCb, bot: Bot,
+                 store: ContentStore, db: Database):
     await callback.answer()
-    await _open_screen(callback, callback_data.id, store)
+    await _open_screen(callback, callback_data.id, store, db, bot)
 
 
 @router.callback_query(kb.ProductCb.filter())

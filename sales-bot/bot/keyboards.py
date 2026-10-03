@@ -1,5 +1,5 @@
 from aiogram.filters.callback_data import CallbackData
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import CopyTextButton, InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from .content import START_SCREEN, Flow, Product, Screen
@@ -60,6 +60,8 @@ METHOD_LABELS = {
 def _button(text: str, kind: str, target: str, screen_id: str) -> InlineKeyboardButton:
     if kind == "url":
         return InlineKeyboardButton(text=text, url=target)
+    if kind == "copy":
+        return InlineKeyboardButton(text=text, copy_text=CopyTextButton(text=target))
     if kind == "screen":
         data = ScreenCb(id=target)
     elif kind == "product":
